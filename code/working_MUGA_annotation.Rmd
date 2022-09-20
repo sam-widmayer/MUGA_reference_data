@@ -1,0 +1,236 @@
+---
+title: "Reference Data QC: MegaMUGA"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    code_folding: hide
+---
+
+```{r setup, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+library(tidyverse)
+library(data.table)
+library(purrr)
+library(qtl2)
+library(magrittr)
+library(DT)
+library(plotly)
+QCtheme <- theme_bw() + 
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(colour = "black"),
+        axis.title = element_text(colour = "black"))
+```
+
+# MegaMUGA Annotations
+
+```{r}
+# Reading in "control genotype" data
+megamuga_controls <- data.table::fread("../data/MMControls/MegaMUGA genotypes CONTROLS.csv")
+control_genotypes <- data.table::fread("../data/MMControls/control.genotypes.csv")
+colnames(control_genotypes)[1] <- "marker"
+
+## Reading in marker annotations
+mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
+
+## Calculating allele frequencies for each marker
+control_allele_freqs <- control_genotypes %>%
+  tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>%
+  dplyr::group_by(marker, genotype) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::mutate(freq = round(n/sum(n), 3),
+                genotype = as.factor(genotype)) %>%
+  dplyr::left_join(., mm_metadata)
+```  
+
+First, we searched for probes where many mice are missing genotype calls.
+
+```{r}
+## Filtering to markers with missing genotypes
+no.calls <- control_allele_freqs %>%
+  dplyr::filter(genotype == "N") %>%
+  tidyr::pivot_wider(names_from = genotype, values_from = n) %>%
+  dplyr::select(marker, chr, bp_grcm39, freq) %>%
+  dplyr::mutate(chr = as.factor(chr))
+cutoff <- quantile(no.calls$freq, probs = seq(0,1,0.05))[[20]]
+above.cutoff <- no.calls %>%
+  dplyr::filter(freq > cutoff)
+```
+
+Of `r length(unique(as.factor(control_allele_freqs$marker)))` markers, `r nrow(no.calls)` failed to genotype at least one sample, and `r nrow(above.cutoff)` markers failed to genotype at least `r cutoff*100`% of samples.
+
+```{r echo=FALSE}
+
+above.cutoff %>%
+  dplyr::left_join(.,mm_metadata) %>%
+  dplyr::mutate(chr = as.factor(chr)) %>%
+  dplyr::arrange(marker) %>%
+  DT::datatable(., filte = "top", 
+              escape = FALSE, 
+              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
+
+ggplot(no.calls, mapping = aes(x = freq)) + 
+  geom_histogram(bins = 100) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) + 
+  QCtheme + 
+  labs(x = "Fraction of mice with missing genotypes",
+       y = "Number of markers")
+```
+
+In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise.
+
+```{r}
+n.calls.strains <- apply(X = control_genotypes[,2:ncol(control_genotypes)], MARGIN = 2, function(x) table(x)[5])
+n.calls.strains.df <- data.frame(n.calls.strains)
+n.calls.strains.df$sample <- names(n.calls.strains)
+n.calls.strains.df %<>%
+  dplyr::rename(n.no.calls = n.calls.strains)
+sampleQC <- ggplot(n.calls.strains.df, 
+                   mapping = aes(x = reorder(sample,n.no.calls), 
+                                 y = n.no.calls,
+                                 text = paste("Sample:", sample))) + 
+  geom_point() +
+  QCtheme + 
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = "Number of mice with missing genotypes",
+       y = "Number of markers")
+ggplotly(sampleQC, tooltip = c("text","y"))
+```
+
+```{r eval=FALSE, include=FALSE}
+## Reading in genotype intensities
+x_intensities <- data.table::fread("../data/MMControls/control.X.csv")
+colnames(x_intensities)[1] <- "marker"
+y_intensities <- data.table::fread("../data/MMControls/control.Y.csv")
+colnames(y_intensities)[1] <- "marker"
+## Check to see if dimensions of intensity tables are identical, marker orders identical, and sample orders identical
+if((unique(dim(x_intensities) == dim(y_intensities)) && 
+   unique(colnames(x_intensities) == colnames(y_intensities)) &&
+   unique(x_intensities$marker == y_intensities$marker)) == TRUE){
+     ## Pivoting the data longer
+  x_int_long <- x_intensities %>%
+  tidyr::pivot_longer(cols = -marker, names_to = "Sample", values_to = "x_int")
+  y_int_long <- y_intensities %>%
+  tidyr::pivot_longer(cols = -marker, names_to = "Sample", values_to = "y_int")
+  
+  long_intensities <- cbind(x_int_long, y_int_long)
+} else {
+     print("Source intensity data frames have non-identical structure; exiting")
+}
+
+long_intensities <- long_intensities[,c(1,2,3,6)]
+```
+
+<!-- Are all markers from sample genotypes in the intensity files and vice versa? -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- summary(unique(control_genotypes$marker) %in% unique(long_intensities$marker)) -->
+<!-- summary(unique(long_intensities$marker) %in% unique(control_genotypes$marker)) -->
+<!-- ``` -->
+
+<!-- We then created a nested data frame for each marker, joining intensities with re-analyzed marker annotations from Belinda Cornes, Dan Gatti, and Karl Broman. -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- ## Joining the indices and two data sources and creating a nested data frame -->
+<!-- int_meta <- long_intensities %>% -->
+<!--   dplyr::left_join(.,mm_metadata) -->
+
+<!-- nest_int_meta <- int_meta %>% -->
+<!--   dplyr::group_by(marker) %>% -->
+<!--   tidyr::nest() -->
+<!-- ``` -->
+
+<!-- Here is an example plot of the probe intensities for a random marker. -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- marker_index = sample(seq(1:length(nest_int_meta$data)),  -->
+<!--                       1,  -->
+<!--                       replace = F) -->
+
+<!-- nest_int_meta$data[[marker_index]] %>% -->
+<!--   ggplot(., mapping = aes(x = x_int, y = y_int)) +  -->
+<!--   theme_bw() +  -->
+<!--   geom_point(alpha = 0.2) +  -->
+<!--   theme(panel.grid = element_blank()) -->
+<!-- ``` -->
+
+<!-- We expect control genotypes to be indicative of x- and y-intensities for each probe for each sample. We've nested the control genotypes so that a QC function can be applied across markers. -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- ## Nesting control genotypes -->
+<!-- control_genos_nested <- control_genotypes %>% -->
+<!--   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>% -->
+<!--   dplyr::group_by(marker) %>% -->
+<!--   tidyr::nest() -->
+<!-- ``` -->
+
+<!-- Are the control genotype nested data frames in the same order as the nested intensity data frames? -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- summary(control_genos_nested$marker == nest_int_meta$marker) -->
+<!-- ``` -->
+
+<!-- We wanted to know whether probe intensities were informative of called genotypes. As a first attempt to cross-validate these calls, we performed k-means clustering on the x- and y-intensities...but the variance explained by clusters does not always converge to a global maximum i.e. -->
+
+<!-- ```{r eval=FALSE, include=FALSE} -->
+<!-- marker_index = 4800 -->
+<!-- summary(control_genos_nested$data[[marker_index]]$sample == nest_int_meta$data[[marker_index]]$Sample) -->
+<!-- ints_genos <- cbind(nest_int_meta$data[[marker_index]], control_genos_nested$data[[marker_index]]) -->
+<!-- marker_kmeans <- function(ints, reps = 50){ -->
+<!--   clusters <- list() -->
+<!--   VEs <- list() -->
+<!--   for(i in 1:reps){ -->
+<!--     k <- kmeans(x = ints %>% dplyr::select(x_int, y_int),  -->
+<!--                 centers = 3,  -->
+<!--                 iter.max = 20) -->
+<!--     clustered.calls <-ints %>%  -->
+<!--       dplyr::select(sample, x_int, y_int, genotype) %>% -->
+<!--       dplyr::mutate(clust = k$cluster) -->
+
+<!--     clusters[[i]] <- clustered.calls %>% -->
+<!--       dplyr::group_by(genotype, clust) %>% -->
+<!--       dplyr::count() -->
+
+<!--     VEs[[i]] <- k$betweenss/k$totss -->
+<!--   } -->
+<!--   return(list(clusters, VEs)) -->
+<!-- } -->
+
+
+<!-- test <- marker_kmeans(ints = ints_genos) -->
+
+
+
+<!-- # kmeans_xints_genos <- kmeans(ints_genos$x_int, centers = length(unique(ints_genos$genotype))) -->
+<!-- # cluster_xints_VE <- kmeans_xints_genos$betweenss/kmeans_xints_genos$totss -->
+<!-- #  -->
+<!-- # kmeans_yints_genos <- kmeans(ints_genos$y_int, centers = length(unique(ints_genos$genotype))) -->
+<!-- # cluster_yints_VE <- kmeans_yints_genos$betweenss/kmeans_yints_genos$totss -->
+<!-- #  -->
+<!-- # clustered_ints_genos <- ints_genos %>% -->
+<!-- #   dplyr::mutate(xclust = as.factor(kmeans_xints_genos$cluster), -->
+<!-- #                 yclust = as.factor(kmeans_yints_genos$cluster)) %>% -->
+<!-- #   dplyr::mutate(clust = paste(xclust, yclust, sep = "_")) -->
+
+<!-- ## Traditional genotype scatter -->
+<!-- clustered_ints_genos  -->
+<!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = as.factor(genotype))) +  -->
+<!--   theme_bw() +  -->
+<!--   geom_point(alpha = 0.2) +  -->
+<!--   theme(panel.grid = element_blank()) -->
+
+<!-- ## kmeans cluster scatter using paired x and y intensities -->
+<!-- clustered_ints_genos%>% -->
+<!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = clust)) +  -->
+<!--   theme_bw() +  -->
+<!--   geom_point(alpha = 0.2) +  -->
+<!--   theme(panel.grid = element_blank()) -->
+
+
+<!-- table(clustered_ints_genos$genotype, clustered_ints_genos$clust) -->
+
+
+
+<!-- ``` -->
