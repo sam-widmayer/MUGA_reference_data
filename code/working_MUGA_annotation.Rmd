@@ -127,9 +127,9 @@ if((unique(dim(x_intensities) == dim(y_intensities)) &&
 }
 
 ## Joining slimmer intensity files with marker metadata and reducing to Chromosome X markers
-long_X_intensities <- long_intensities[,c(1,2,3,6)] %>%
+long_XY_intensities <- long_intensities[,c(1,2,3,6)] %>%
   dplyr::left_join(., mm_metadata) %>%
-  dplyr::filter(chr == "X")
+  dplyr::filter(chr %in% c("X","Y"))
 
 ```
 
@@ -137,7 +137,7 @@ Then we flagged markers with high missingness across all samples and samples wit
 
 ```{r Flagging "low-quality" markers and samples}
 ## Flagging markers and samples based on previous QC steps
-flagged_X_intensities <- long_X_intensities %>%
+flagged_XY_intensities <- long_XY_intensities %>%
   dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
                                              true = "FLAG",
                                              false = "")) %>%
@@ -150,7 +150,7 @@ The first round of inferring predicted sexes used a rough search of the sample n
 
 ```{r Preliminary sex prediction}
 ## First round of predicted sex inference
-prelim.predicted.sexes <- flagged_X_intensities %>%
+prelim.predicted.sexes <- flagged_XY_intensities %>%
   dplyr::mutate(bg = dplyr::case_when(stringr::str_detect(string = sample, 
                                                           pattern = "F1") == TRUE ~ "F1",
                                       TRUE ~ as.character(sample)),
@@ -255,173 +255,38 @@ predicted.sexes.strings %>%
   dplyr::filter(predicted.sex == "unknown",
                 marker == predicted.sexes.strings$marker[[1]]) %>%
   dplyr::select(sample, bg)
-
 ```
 
-<!-- Are all markers from sample genotypes in the intensity files and vice versa? -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- summary(unique(control_genotypes$marker) %in% unique(long_intensities$marker)) -->
-
-<!-- summary(unique(long_intensities$marker) %in% unique(control_genotypes$marker)) -->
-
-<!-- ``` -->
-
-<!-- We then created a nested data frame for each marker, joining intensities with re-analyzed marker annotations from Belinda Cornes, Dan Gatti, and Karl Broman. -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- ## Joining the indices and two data sources and creating a nested data frame -->
-
-<!-- int_meta <- long_intensities %>% -->
-
-<!--   dplyr::left_join(.,mm_metadata) -->
-
-<!-- nest_int_meta <- int_meta %>% -->
-
-<!--   dplyr::group_by(marker) %>% -->
-
-<!--   tidyr::nest() -->
-
-<!-- ``` -->
-
-<!-- Here is an example plot of the probe intensities for a random marker. -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- marker_index = sample(seq(1:length(nest_int_meta$data)),  -->
-
-<!--                       1,  -->
-
-<!--                       replace = F) -->
-
-<!-- nest_int_meta$data[[marker_index]] %>% -->
-
-<!--   ggplot(., mapping = aes(x = x_int, y = y_int)) +  -->
-
-<!--   theme_bw() +  -->
-
-<!--   geom_point(alpha = 0.2) +  -->
-
-<!--   theme(panel.grid = element_blank()) -->
-
-<!-- ``` -->
-
-<!-- We expect control genotypes to be indicative of x- and y-intensities for each probe for each sample. We've nested the control genotypes so that a QC function can be applied across markers. -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- ## Nesting control genotypes -->
-
-<!-- control_genos_nested <- control_genotypes %>% -->
-
-<!--   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>% -->
-
-<!--   dplyr::group_by(marker) %>% -->
-
-<!--   tidyr::nest() -->
-
-<!-- ``` -->
-
-<!-- Are the control genotype nested data frames in the same order as the nested intensity data frames? -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- summary(control_genos_nested$marker == nest_int_meta$marker) -->
-
-<!-- ``` -->
-
-<!-- We wanted to know whether probe intensities were informative of called genotypes. As a first attempt to cross-validate these calls, we performed k-means clustering on the x- and y-intensities...but the variance explained by clusters does not always converge to a global maximum i.e. -->
-
-<!-- ```{r eval=FALSE, include=FALSE} -->
-
-<!-- marker_index = 4800 -->
-
-<!-- summary(control_genos_nested$data[[marker_index]]$sample == nest_int_meta$data[[marker_index]]$Sample) -->
-
-<!-- ints_genos <- cbind(nest_int_meta$data[[marker_index]], control_genos_nested$data[[marker_index]]) -->
-
-<!-- marker_kmeans <- function(ints, reps = 50){ -->
-
-<!--   clusters <- list() -->
-
-<!--   VEs <- list() -->
-
-<!--   for(i in 1:reps){ -->
-
-<!--     k <- kmeans(x = ints %>% dplyr::select(x_int, y_int),  -->
-
-<!--                 centers = 3,  -->
-
-<!--                 iter.max = 20) -->
-
-<!--     clustered.calls <-ints %>%  -->
-
-<!--       dplyr::select(sample, x_int, y_int, genotype) %>% -->
-
-<!--       dplyr::mutate(clust = k$cluster) -->
-
-<!--     clusters[[i]] <- clustered.calls %>% -->
-
-<!--       dplyr::group_by(genotype, clust) %>% -->
-
-<!--       dplyr::count() -->
-
-<!--     VEs[[i]] <- k$betweenss/k$totss -->
-
-<!--   } -->
-
-<!--   return(list(clusters, VEs)) -->
-
-<!-- } -->
-
-<!-- test <- marker_kmeans(ints = ints_genos) -->
-
-<!-- # kmeans_xints_genos <- kmeans(ints_genos$x_int, centers = length(unique(ints_genos$genotype))) -->
-
-<!-- # cluster_xints_VE <- kmeans_xints_genos$betweenss/kmeans_xints_genos$totss -->
-
-<!-- #  -->
-
-<!-- # kmeans_yints_genos <- kmeans(ints_genos$y_int, centers = length(unique(ints_genos$genotype))) -->
-
-<!-- # cluster_yints_VE <- kmeans_yints_genos$betweenss/kmeans_yints_genos$totss -->
-
-<!-- #  -->
-
-<!-- # clustered_ints_genos <- ints_genos %>% -->
-
-<!-- #   dplyr::mutate(xclust = as.factor(kmeans_xints_genos$cluster), -->
-
-<!-- #                 yclust = as.factor(kmeans_yints_genos$cluster)) %>% -->
-
-<!-- #   dplyr::mutate(clust = paste(xclust, yclust, sep = "_")) -->
-
-<!-- ## Traditional genotype scatter -->
-
-<!-- clustered_ints_genos  -->
-
-<!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = as.factor(genotype))) +  -->
-
-<!--   theme_bw() +  -->
-
-<!--   geom_point(alpha = 0.2) +  -->
-
-<!--   theme(panel.grid = element_blank()) -->
-
-<!-- ## kmeans cluster scatter using paired x and y intensities -->
-
-<!-- clustered_ints_genos%>% -->
-
-<!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = clust)) +  -->
-
-<!--   theme_bw() +  -->
-
-<!--   geom_point(alpha = 0.2) +  -->
-
-<!--   theme(panel.grid = element_blank()) -->
-
-<!-- table(clustered_ints_genos$genotype, clustered_ints_genos$clust) -->
-
-<!-- ``` -->
+After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex.
+
+```{r}
+mean.x.intensities.by.sex <- predicted.sexes.strings %>%
+  dplyr::filter(marker_flag != "FLAG") %>%
+  dplyr::group_by(sample, predicted.sex, chr, high_missing_sample) %>%
+  dplyr::summarise(mean.x = mean(x_int),
+                   mean.y = mean(y_int))
+
+predicted.sex.plot.palettes <- mean.x.intensities.by.sex %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct(sample, predicted.sex, high_missing_sample) %>%
+  dplyr::mutate(predicted.sex.palette = dplyr::case_when(predicted.sex == "f" ~ "#5856b7",
+                                                         predicted.sex == "m" ~ "#eeb868",
+                                                         predicted.sex == "unknown" ~ "black"))
+
+predicted.sex.palette <- predicted.sex.plot.palettes$predicted.sex.palette
+names(predicted.sex.palette) <- predicted.sex.plot.palettes$predicted.sex
+
+mean.x.intensities.by.sex.plot <- ggplot(mean.x.intensities.by.sex, 
+                                         mapping = aes(x = mean.x, 
+                                                       y = mean.y, 
+                                                       colour = predicted.sex,
+                                                       shape = high_missing_sample,
+                                                       text = sample,
+                                                       label = high_missing_sample)) + 
+  geom_point() + 
+  scale_colour_manual(values = predicted.sex.palette) + 
+  facet_grid(.~chr) +
+  QCtheme
+ggplotly(mean.x.intensities.by.sex.plot, 
+         tooltip = c("text","label"),)
+```
