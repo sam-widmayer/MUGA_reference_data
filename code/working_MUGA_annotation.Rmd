@@ -25,7 +25,7 @@ QCtheme <- theme_bw() +
 
 # MegaMUGA Annotations
 
-```{r}
+```{r Reading in reference genotypes and metadata}
 # Reading in "control genotype" data
 megamuga_controls <- data.table::fread("../data/MMControls/MegaMUGA genotypes CONTROLS.csv")
 control_genotypes <- data.table::fread("../data/MMControls/control.genotypes.csv")
@@ -42,11 +42,11 @@ control_allele_freqs <- control_genotypes %>%
   dplyr::mutate(freq = round(n/sum(n), 3),
                 genotype = as.factor(genotype)) %>%
   dplyr::left_join(., mm_metadata)
-```  
+```
 
 First, we searched for probes where many mice are missing genotype calls.
 
-```{r}
+```{r Markers with high "N" counts among reference samples}
 ## Filtering to markers with missing genotypes
 no.calls <- control_allele_freqs %>%
   dplyr::filter(genotype == "N") %>%
@@ -60,7 +60,7 @@ above.cutoff <- no.calls %>%
 
 Of `r length(unique(as.factor(control_allele_freqs$marker)))` markers, `r nrow(no.calls)` failed to genotype at least one sample, and `r nrow(above.cutoff)` markers failed to genotype at least `r cutoff*100`% of samples.
 
-```{r echo=FALSE}
+```{r Plotting no calls, echo=FALSE}
 
 above.cutoff %>%
   dplyr::left_join(.,mm_metadata) %>%
@@ -80,12 +80,13 @@ ggplot(no.calls, mapping = aes(x = freq)) +
 
 In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise.
 
-```{r}
+```{r Reference samples with high missingness}
 n.calls.strains <- apply(X = control_genotypes[,2:ncol(control_genotypes)], MARGIN = 2, function(x) table(x)[5])
 n.calls.strains.df <- data.frame(n.calls.strains)
 n.calls.strains.df$sample <- names(n.calls.strains)
 n.calls.strains.df %<>%
   dplyr::rename(n.no.calls = n.calls.strains)
+
 sampleQC <- ggplot(n.calls.strains.df, 
                    mapping = aes(x = reorder(sample,n.no.calls), 
                                  y = n.no.calls,
@@ -97,9 +98,14 @@ sampleQC <- ggplot(n.calls.strains.df,
   labs(x = "Number of mice with missing genotypes",
        y = "Number of markers")
 ggplotly(sampleQC, tooltip = c("text","y"))
+
+high.n.samples <- n.calls.strains.df %>%
+  dplyr::filter(n.no.calls > quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20])
 ```
 
-```{r eval=FALSE, include=FALSE}
+We next validated the sexes of each sample using Chromosome X probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X chromosome.
+
+```{r Filtering to Chr X Markers}
 ## Reading in genotype intensities
 x_intensities <- data.table::fread("../data/MMControls/control.X.csv")
 colnames(x_intensities)[1] <- "marker"
@@ -111,126 +117,311 @@ if((unique(dim(x_intensities) == dim(y_intensities)) &&
    unique(x_intensities$marker == y_intensities$marker)) == TRUE){
      ## Pivoting the data longer
   x_int_long <- x_intensities %>%
-  tidyr::pivot_longer(cols = -marker, names_to = "Sample", values_to = "x_int")
+  tidyr::pivot_longer(cols = -marker, names_to = "sample", values_to = "x_int")
   y_int_long <- y_intensities %>%
-  tidyr::pivot_longer(cols = -marker, names_to = "Sample", values_to = "y_int")
+  tidyr::pivot_longer(cols = -marker, names_to = "sample", values_to = "y_int")
   
   long_intensities <- cbind(x_int_long, y_int_long)
 } else {
      print("Source intensity data frames have non-identical structure; exiting")
 }
 
-long_intensities <- long_intensities[,c(1,2,3,6)]
+## Joining slimmer intensity files with marker metadata and reducing to Chromosome X markers
+long_X_intensities <- long_intensities[,c(1,2,3,6)] %>%
+  dplyr::left_join(., mm_metadata) %>%
+  dplyr::filter(chr == "X")
+
+```
+
+Then we flagged markers with high missingness across all samples and samples with high missigness among all markers.
+
+```{r Flagging "low-quality" markers and samples}
+## Flagging markers and samples based on previous QC steps
+flagged_X_intensities <- long_X_intensities %>%
+  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
+                                             true = "FLAG",
+                                             false = "")) %>%
+  dplyr::mutate(high_missing_sample = dplyr::if_else(condition = sample %in% high.n.samples$sample,
+                                                     true = "FLAG",
+                                                     false = ""))
+```
+
+The first round of inferring predicted sexes used a rough search of the sample name for a proper convention among F1 hybrids, as well as an increasingly large regex search into the sample ID to identify properly named samples from inbred strains.
+
+```{r Preliminary sex prediction}
+## First round of predicted sex inference
+prelim.predicted.sexes <- flagged_X_intensities %>%
+  dplyr::mutate(bg = dplyr::case_when(stringr::str_detect(string = sample, 
+                                                          pattern = "F1") == TRUE ~ "F1",
+                                      TRUE ~ as.character(sample)),
+                predicted.sex = dplyr::case_when(stringr::str_detect(string = sample, 
+                                                          pattern = "F1f") == TRUE ~ "f",
+                                      stringr::str_detect(string = sample, 
+                                                          pattern = "F1m") == TRUE ~ "m",
+                                      TRUE ~ "unknown"))
+
+unknown <- prelim.predicted.sexes %>%
+  dplyr::filter(predicted.sex == "unknown")
+
+digit.trim <- unknown %>% 
+  dplyr::mutate(mouse.id.1 = stringr::str_sub(sample, -1),
+                predicted.sex.1 = dplyr::case_when(stringr::str_sub(mouse.id.1, 1, 1) %in% c("m","M") ~ "m",
+                                                   stringr::str_sub(mouse.id.1, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                bg = if_else(condition = (predicted.sex.1 == "m" | predicted.sex.1 == "f"), 
+                             true = str_replace(string = bg, 
+                                                pattern = mouse.id.1, 
+                                                replacement = ""), 
+                             false = bg),
+                
+                mouse.id.3= stringr::str_sub(sample, -3),
+                predicted.sex.3 = dplyr::case_when(stringr::str_sub(mouse.id.3, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.3, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                bg = if_else(condition = (predicted.sex.3 == "m" | predicted.sex.3 == "f"), 
+                             true = str_replace(string = bg, 
+                                                pattern = mouse.id.3, 
+                                                replacement = ""), 
+                             false = bg),
+                
+                mouse.id.4 = stringr::str_sub(sample, -4),
+                predicted.sex.4 = dplyr::case_when(stringr::str_sub(mouse.id.4, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.4, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                bg = if_else(condition = (predicted.sex.4 == "m" | predicted.sex.4 == "f"), 
+                             true = str_replace(string = bg, 
+                                                pattern = mouse.id.4, 
+                                                replacement = ""), 
+                             false = bg),
+                
+                mouse.id.5 = stringr::str_sub(sample, -5),
+                mouse.id.5 = stringr::str_replace(string = mouse.id.5,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:symbol:]", 
+                                                  replacement = ""),
+                predicted.sex.5 = dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                bg = if_else(condition = (predicted.sex.5 == "m" | predicted.sex.5 == "f"),
+                             true = str_replace(string = bg,
+                                                pattern = mouse.id.5,
+                                                replacement = ""),
+                             false = bg),
+                
+                mouse.id.6 = stringr::str_sub(sample, -6),
+                mouse.id.6 = stringr::str_replace(string = mouse.id.6,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:punct:]", 
+                                                  replacement = ""),
+                mouse.id.6 = stringr::str_replace(string = mouse.id.6,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:symbol:]", 
+                                                  replacement = ""),
+                predicted.sex.6 = dplyr::case_when(stringr::str_sub(mouse.id.6, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.6, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                bg = if_else(condition = (predicted.sex.6 == "m" | predicted.sex.6 == "f"), 
+                             true = str_replace(string = bg, 
+                                                pattern = mouse.id.6, 
+                                                replacement = ""), 
+                             false = bg)) %>%
+  dplyr::mutate(predicted.sex = dplyr::case_when(predicted.sex.1 == "m" ~ "m", 
+                                                 predicted.sex.3 == "m" ~ "m",
+                                                 predicted.sex.4 == "m" ~ "m",
+                                                 predicted.sex.5 == "m" ~ "m",
+                                                 predicted.sex.6 == "m" ~ "m",
+                                                 
+                                                 predicted.sex.1 == "f" ~ "f", 
+                                                 predicted.sex.3 == "f" ~ "f",
+                                                 predicted.sex.4 == "f" ~ "f",
+                                                 predicted.sex.5 == "f" ~ "f",
+                                                 predicted.sex.6 == "f" ~ "f",
+                                                 TRUE ~ "unknown"))
+
+predicted.sexes.strings <- prelim.predicted.sexes %>%
+  dplyr::filter(predicted.sex != "unknown") %>%
+  dplyr::bind_rows(.,digit.trim)
+
+## Taking the first marker as a sample
+predicted.sex.table <- predicted.sexes.strings %>%
+  dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
+  dplyr::select(sample, predicted.sex, bg) %>%
+  dplyr::group_by(predicted.sex) %>%
+  dplyr::count() 
+
+```
+
+This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples exhibit a range of naming inconsistencies.
+
+```{r}
+predicted.sexes.strings %>%
+  dplyr::filter(predicted.sex == "unknown",
+                marker == predicted.sexes.strings$marker[[1]]) %>%
+  dplyr::select(sample, bg)
+
 ```
 
 <!-- Are all markers from sample genotypes in the intensity files and vice versa? -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- summary(unique(control_genotypes$marker) %in% unique(long_intensities$marker)) -->
+
 <!-- summary(unique(long_intensities$marker) %in% unique(control_genotypes$marker)) -->
+
 <!-- ``` -->
 
 <!-- We then created a nested data frame for each marker, joining intensities with re-analyzed marker annotations from Belinda Cornes, Dan Gatti, and Karl Broman. -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- ## Joining the indices and two data sources and creating a nested data frame -->
+
 <!-- int_meta <- long_intensities %>% -->
+
 <!--   dplyr::left_join(.,mm_metadata) -->
 
 <!-- nest_int_meta <- int_meta %>% -->
+
 <!--   dplyr::group_by(marker) %>% -->
+
 <!--   tidyr::nest() -->
+
 <!-- ``` -->
 
 <!-- Here is an example plot of the probe intensities for a random marker. -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- marker_index = sample(seq(1:length(nest_int_meta$data)),  -->
+
 <!--                       1,  -->
+
 <!--                       replace = F) -->
 
 <!-- nest_int_meta$data[[marker_index]] %>% -->
+
 <!--   ggplot(., mapping = aes(x = x_int, y = y_int)) +  -->
+
 <!--   theme_bw() +  -->
+
 <!--   geom_point(alpha = 0.2) +  -->
+
 <!--   theme(panel.grid = element_blank()) -->
+
 <!-- ``` -->
 
 <!-- We expect control genotypes to be indicative of x- and y-intensities for each probe for each sample. We've nested the control genotypes so that a QC function can be applied across markers. -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- ## Nesting control genotypes -->
+
 <!-- control_genos_nested <- control_genotypes %>% -->
+
 <!--   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>% -->
+
 <!--   dplyr::group_by(marker) %>% -->
+
 <!--   tidyr::nest() -->
+
 <!-- ``` -->
 
 <!-- Are the control genotype nested data frames in the same order as the nested intensity data frames? -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- summary(control_genos_nested$marker == nest_int_meta$marker) -->
+
 <!-- ``` -->
 
 <!-- We wanted to know whether probe intensities were informative of called genotypes. As a first attempt to cross-validate these calls, we performed k-means clustering on the x- and y-intensities...but the variance explained by clusters does not always converge to a global maximum i.e. -->
 
 <!-- ```{r eval=FALSE, include=FALSE} -->
+
 <!-- marker_index = 4800 -->
+
 <!-- summary(control_genos_nested$data[[marker_index]]$sample == nest_int_meta$data[[marker_index]]$Sample) -->
+
 <!-- ints_genos <- cbind(nest_int_meta$data[[marker_index]], control_genos_nested$data[[marker_index]]) -->
+
 <!-- marker_kmeans <- function(ints, reps = 50){ -->
+
 <!--   clusters <- list() -->
+
 <!--   VEs <- list() -->
+
 <!--   for(i in 1:reps){ -->
+
 <!--     k <- kmeans(x = ints %>% dplyr::select(x_int, y_int),  -->
+
 <!--                 centers = 3,  -->
+
 <!--                 iter.max = 20) -->
+
 <!--     clustered.calls <-ints %>%  -->
+
 <!--       dplyr::select(sample, x_int, y_int, genotype) %>% -->
+
 <!--       dplyr::mutate(clust = k$cluster) -->
 
 <!--     clusters[[i]] <- clustered.calls %>% -->
+
 <!--       dplyr::group_by(genotype, clust) %>% -->
+
 <!--       dplyr::count() -->
 
 <!--     VEs[[i]] <- k$betweenss/k$totss -->
-<!--   } -->
-<!--   return(list(clusters, VEs)) -->
-<!-- } -->
 
+<!--   } -->
+
+<!--   return(list(clusters, VEs)) -->
+
+<!-- } -->
 
 <!-- test <- marker_kmeans(ints = ints_genos) -->
 
-
-
 <!-- # kmeans_xints_genos <- kmeans(ints_genos$x_int, centers = length(unique(ints_genos$genotype))) -->
+
 <!-- # cluster_xints_VE <- kmeans_xints_genos$betweenss/kmeans_xints_genos$totss -->
+
 <!-- #  -->
+
 <!-- # kmeans_yints_genos <- kmeans(ints_genos$y_int, centers = length(unique(ints_genos$genotype))) -->
+
 <!-- # cluster_yints_VE <- kmeans_yints_genos$betweenss/kmeans_yints_genos$totss -->
+
 <!-- #  -->
+
 <!-- # clustered_ints_genos <- ints_genos %>% -->
+
 <!-- #   dplyr::mutate(xclust = as.factor(kmeans_xints_genos$cluster), -->
+
 <!-- #                 yclust = as.factor(kmeans_yints_genos$cluster)) %>% -->
+
 <!-- #   dplyr::mutate(clust = paste(xclust, yclust, sep = "_")) -->
 
 <!-- ## Traditional genotype scatter -->
+
 <!-- clustered_ints_genos  -->
+
 <!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = as.factor(genotype))) +  -->
+
 <!--   theme_bw() +  -->
+
 <!--   geom_point(alpha = 0.2) +  -->
+
 <!--   theme(panel.grid = element_blank()) -->
 
 <!-- ## kmeans cluster scatter using paired x and y intensities -->
+
 <!-- clustered_ints_genos%>% -->
+
 <!--   ggplot(., mapping = aes(x = x_int, y = y_int, colour = clust)) +  -->
+
 <!--   theme_bw() +  -->
+
 <!--   geom_point(alpha = 0.2) +  -->
+
 <!--   theme(panel.grid = element_blank()) -->
 
-
 <!-- table(clustered_ints_genos$genotype, clustered_ints_genos$clust) -->
-
-
 
 <!-- ``` -->
