@@ -260,7 +260,7 @@ predicted.sex.table <- predicted.sexes.strings %>%
 
 This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities.
 
-```{r}
+```{r Predicted sex table}
 predicted.sexes.strings %>%
   dplyr::filter(predicted.sex == "unknown",
                 marker == predicted.sexes.strings$marker[[1]]) %>%
@@ -269,7 +269,7 @@ predicted.sexes.strings %>%
 
 After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information.
 
-```{r}
+```{r Predicted sex visualization}
 mean.x.intensities.by.sex <- predicted.sexes.strings %>%
   dplyr::filter(marker_flag != "FLAG") %>%
   dplyr::group_by(sample, predicted.sex, chr, high_missing_sample) %>%
@@ -300,3 +300,19 @@ mean.x.intensities.by.sex.plot <- ggplot(mean.x.intensities.by.sex,
 ggplotly(mean.x.intensities.by.sex.plot, 
          tooltip = c("text","label"),)
 ```
+
+By visual inspection, we found the following issues with either the sample name-based sex prediction or putative sex mix-ups:
+
+-   **129S1/SvImJf**: Predicted as male, plotted with females; this makes sense because following a 1 character search for sex classifier (yielding "f") is a three character search (yielding "mJf"). Might need a specific fix for this sample. Almost certainly a female that was predicted incorrectly.
+
+-   **R26FIpe/FIpem997**: Predicted male, plotted with females. Four character search would yield proper mouse ID, but clustered stereotypically with other female samples.
+
+-   **Nestin -/- Cre+m; TgIn -/- Cre+m**: Predicted male, plotted with females.
+
+-   **(CAST/EiJxPWK/PhJ)F10123**: Predicted female, plotted as male. Capitalized "M" or "F" were treated with equal weight as lowercase sex classifiers in mouse ID. Specific Chr X genotypes should reveal sex (*i.e.* do Chr X calls match CAST/EiJ or PWK/PhJ sample Chr X calls?)
+
+-   **017-FH-F1**: Predicted female, plotted as male. Capitalized "F" following five character search would have yielded this prediction. Even without proper nomenclature, the sample's stereotypical clustering would suggest this sample is male.
+
+-   **(BALB/cByJxC57BL/6J)F1f31283; (BALB/cJxC57BL/6J)F1f36006**: Predicted female, plotted as male. Samples are from very similar strain backgrounds. Specific Chr X genotypes should reveal sex (*i.e.* do Chr X calls match BALB/cJ samples?).
+
+In addition, all samples for which sex could not be predicted based on sample ID clustered with one sex or the other based on probe intensity, with the slight exception of IN34, which is was flagged for low marker representation.
