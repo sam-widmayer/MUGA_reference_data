@@ -4,9 +4,11 @@ date: "`r Sys.Date()`"
 output:
   html_document:
     toc: TRUE
-    toc_float: TRUE
+    toc_depth: 3
     code_folding: hide
 ---
+
+# MegaMUGA Annotations
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
@@ -23,17 +25,24 @@ QCtheme <- theme_bw() +
         axis.title = element_text(colour = "black"))
 ```
 
-# MegaMUGA Annotations
+## Reading in reference genotypes and metadata
+
+First I read in the reference sample genotypes, as well as marker annotations from an [analysis](https://github.com/kbroman/MUGAarrays) previously conducted by Karl Broman, Dan Gatti, and Belinda Cornes.
 
 ```{r Reading in reference genotypes and metadata}
-# Reading in "control genotype" data
-megamuga_controls <- data.table::fread("../data/MMControls/MegaMUGA genotypes CONTROLS.csv")
-control_genotypes <- data.table::fread("../data/MMControls/control.genotypes.csv")
+# Reading in "reference sample genotype data
+control_genotypes <- suppressWarnings(data.table::fread("../data/MMControls/control.genotypes.csv"))
 colnames(control_genotypes)[1] <- "marker"
 
 ## Reading in marker annotations
 mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
+```
 
+## Marker QC: Searching for missing genotype calls
+
+We searched for probes where many mice are missing genotype calls.
+
+```{r Markers with high "N" counts among reference samples}
 ## Calculating allele frequencies for each marker
 control_allele_freqs <- control_genotypes %>%
   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>%
@@ -42,11 +51,7 @@ control_allele_freqs <- control_genotypes %>%
   dplyr::mutate(freq = round(n/sum(n), 3),
                 genotype = as.factor(genotype)) %>%
   dplyr::left_join(., mm_metadata)
-```
 
-First, we searched for probes where many mice are missing genotype calls.
-
-```{r Markers with high "N" counts among reference samples}
 ## Filtering to markers with missing genotypes
 no.calls <- control_allele_freqs %>%
   dplyr::filter(genotype == "N") %>%
@@ -78,7 +83,9 @@ ggplot(no.calls, mapping = aes(x = freq)) +
        y = "Number of markers")
 ```
 
-In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise.
+## Sample QC: Searching for samples with poor marker representation
+
+In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains with identical names meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise. Mouse over individual samples to see the number of markers with missing genotypes for each sample.
 
 ```{r Reference samples with high missingness}
 n.calls.strains <- apply(X = control_genotypes[,2:ncol(control_genotypes)], MARGIN = 2, function(x) table(x)[5])
@@ -103,13 +110,15 @@ high.n.samples <- n.calls.strains.df %>%
   dplyr::filter(n.no.calls > quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20])
 ```
 
-We next validated the sexes of each sample using Chromosome X probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X chromosome.
+## Validating sex of reference samples
+
+We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes.
 
 ```{r Filtering to Chr X Markers}
 ## Reading in genotype intensities
-x_intensities <- data.table::fread("../data/MMControls/control.X.csv")
+x_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.X.csv"))
 colnames(x_intensities)[1] <- "marker"
-y_intensities <- data.table::fread("../data/MMControls/control.Y.csv")
+y_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.Y.csv"))
 colnames(y_intensities)[1] <- "marker"
 ## Check to see if dimensions of intensity tables are identical, marker orders identical, and sample orders identical
 if((unique(dim(x_intensities) == dim(y_intensities)) && 
@@ -133,7 +142,7 @@ long_XY_intensities <- long_intensities[,c(1,2,3,6)] %>%
 
 ```
 
-Then we flagged markers with high missingness across all samples and samples with high missigness among all markers.
+Then we flagged markers with high missingness across all samples, as well as samples with high missingness among all markers.
 
 ```{r Flagging "low-quality" markers and samples}
 ## Flagging markers and samples based on previous QC steps
@@ -146,7 +155,7 @@ flagged_XY_intensities <- long_XY_intensities %>%
                                                      false = ""))
 ```
 
-The first round of inferring predicted sexes used a rough search of the sample name for a proper convention among F1 hybrids, as well as an increasingly large regex search into the sample ID to identify properly named samples from inbred strains.
+The first round of inferring predicted sexes used a rough search of the sample name for expected nomenclature convention, which includes a sex denotation.
 
 ```{r Preliminary sex prediction}
 ## First round of predicted sex inference
@@ -235,11 +244,12 @@ digit.trim <- unknown %>%
                                                  predicted.sex.6 == "f" ~ "f",
                                                  TRUE ~ "unknown"))
 
+# Removing previously "unknown" samples from initial results and binding newly inferred samples
 predicted.sexes.strings <- prelim.predicted.sexes %>%
   dplyr::filter(predicted.sex != "unknown") %>%
   dplyr::bind_rows(.,digit.trim)
 
-## Taking the first marker as a sample
+## Taking the first marker as a sample and tabulating the number of samples for each predicted sex
 predicted.sex.table <- predicted.sexes.strings %>%
   dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
   dplyr::select(sample, predicted.sex, bg) %>%
@@ -248,7 +258,7 @@ predicted.sex.table <- predicted.sexes.strings %>%
 
 ```
 
-This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples exhibit a range of naming inconsistencies.
+This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities.
 
 ```{r}
 predicted.sexes.strings %>%
@@ -257,7 +267,7 @@ predicted.sexes.strings %>%
   dplyr::select(sample, bg)
 ```
 
-After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex.
+After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information.
 
 ```{r}
 mean.x.intensities.by.sex <- predicted.sexes.strings %>%
