@@ -71,7 +71,7 @@ above.cutoff %>%
   dplyr::left_join(.,mm_metadata) %>%
   dplyr::mutate(chr = as.factor(chr)) %>%
   dplyr::arrange(marker) %>%
-  DT::datatable(., filte = "top", 
+  DT::datatable(., filter = "top", 
               escape = FALSE, 
               options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
 
@@ -83,7 +83,9 @@ ggplot(no.calls, mapping = aes(x = freq)) +
        y = "Number of markers")
 ```
 
-## Sample QC: Searching for samples with poor marker representation
+## Sample QC
+
+### Searching for samples with poor marker representation
 
 In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains with identical names meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise. Mouse over individual samples to see the number of markers with missing genotypes for each sample.
 
@@ -110,7 +112,7 @@ high.n.samples <- n.calls.strains.df %>%
   dplyr::filter(n.no.calls > quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20])
 ```
 
-## Validating sex of reference samples
+### Validating sex of reference samples
 
 We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes.
 
@@ -258,7 +260,7 @@ predicted.sex.table <- predicted.sexes.strings %>%
 
 ```
 
-This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities.
+This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities. Note there are triplicate KOMP cell DNA JM8 samples.
 
 ```{r Predicted sex table}
 predicted.sexes.strings %>%
@@ -276,9 +278,30 @@ mean.x.intensities.by.sex <- predicted.sexes.strings %>%
   dplyr::summarise(mean.x = mean(x_int),
                    mean.y = mean(y_int))
 
-predicted.sex.plot.palettes <- mean.x.intensities.by.sex %>%
+Xchr.int <- predicted.sexes.strings %>%
   dplyr::ungroup() %>%
-  dplyr::distinct(sample, predicted.sex, high_missing_sample) %>%
+  dplyr::filter(marker_flag != "FLAG",
+                chr == "X") %>%
+  dplyr::mutate(x.chr.int = x_int + y_int) %>%
+  dplyr::group_by(sample, predicted.sex, high_missing_sample) %>%
+  dplyr::summarise(mean.x.chr.int = mean(x.chr.int))
+
+Ychr.int <- predicted.sexes.strings %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(marker_flag != "FLAG",
+                chr == "Y") %>%
+  dplyr::group_by(sample, predicted.sex, high_missing_sample) %>%
+  dplyr::summarise(mean.y.int = mean(y_int))
+
+if(unique(Xchr.int$sample == Ychr.int$sample) == TRUE){
+  sex.chr.intensities <- cbind(Xchr.int,Ychr.int$mean.y.int)
+  colnames(sex.chr.intensities) <- c("sample","predicted.sex","bad_sample","sumxy_int","y_int")
+}
+
+
+predicted.sex.plot.palettes <- sex.chr.intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct(sample, predicted.sex, bad_sample) %>%
   dplyr::mutate(predicted.sex.palette = dplyr::case_when(predicted.sex == "f" ~ "#5856b7",
                                                          predicted.sex == "m" ~ "#eeb868",
                                                          predicted.sex == "unknown" ~ "black"))
@@ -286,19 +309,19 @@ predicted.sex.plot.palettes <- mean.x.intensities.by.sex %>%
 predicted.sex.palette <- predicted.sex.plot.palettes$predicted.sex.palette
 names(predicted.sex.palette) <- predicted.sex.plot.palettes$predicted.sex
 
-mean.x.intensities.by.sex.plot <- ggplot(mean.x.intensities.by.sex, 
-                                         mapping = aes(x = mean.x, 
-                                                       y = mean.y, 
+mean.x.intensities.by.sex.plot <- ggplot(sex.chr.intensities, 
+                                         mapping = aes(x = sumxy_int, 
+                                                       y = y_int, 
                                                        colour = predicted.sex,
-                                                       shape = high_missing_sample,
+                                                       shape = bad_sample,
                                                        text = sample,
-                                                       label = high_missing_sample)) + 
+                                                       label = bad_sample)) + 
   geom_point() + 
   scale_colour_manual(values = predicted.sex.palette) + 
-  facet_grid(.~chr) +
+  # facet_grid(.~chr) +
   QCtheme
 ggplotly(mean.x.intensities.by.sex.plot, 
-         tooltip = c("text","label"),)
+         tooltip = c("text","label"))
 ```
 
 By visual inspection, we found the following issues with either the sample name-based sex prediction or putative sex mix-ups:
@@ -315,4 +338,65 @@ By visual inspection, we found the following issues with either the sample name-
 
 -   **(BALB/cByJxC57BL/6J)F1f31283; (BALB/cJxC57BL/6J)F1f36006**: Predicted female, plotted as male. Samples are from very similar strain backgrounds. Specific Chr X genotypes should reveal sex (*i.e.* do Chr X calls match BALB/cJ samples?).
 
-In addition, all samples for which sex could not be predicted based on sample ID clustered with one sex or the other based on probe intensity, with the slight exception of IN34, which is was flagged for low marker representation.
+In addition, all samples for which sex could not be predicted based on sample ID clustered with one sex or the other based on probe intensity.
+
+Because the split between inferred sexes of samples was so distinct, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
+
+```{r kmeans clustering}
+
+# Actual clustering
+rough_clusters <- kmeans(sex.chr.intensities[,4:5], centers = 2)$cluster
+sex.chr.k.means <- sex.chr.intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(clust = as.factor(rough_clusters))
+
+# Determining the most frequent clusters, these should be male and female but depending on how k means converges, will differ in order, so must recode dynamically
+sex.by.cluster.tab <- sex.chr.k.means %>%
+  dplyr::group_by(predicted.sex, clust) %>%
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
+top.clusters <- sex.by.cluster.tab[1:2,] %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(inferred.sex = predicted.sex) %>%
+  dplyr::select(-n,-predicted.sex)
+
+# Now recoding samples based on inferred sex by cluster assignment
+reSexed_samples <- sex.chr.k.means %>%
+  dplyr::select(-predicted.sex) %>%
+  dplyr::left_join(.,top.clusters) %>%
+  dplyr::left_join(sex.chr.intensities %>%
+                     dplyr::select(sample, predicted.sex))
+
+# write table
+reSexed_samples_table <- reSexed_samples %>%
+  dplyr::mutate(resexed = predicted.sex != inferred.sex)
+reSexed_samples_table %>% 
+  dplyr::select(sample, resexed, predicted.sex, inferred.sex) %>%
+  DT::datatable(., filter = "top", 
+              escape = FALSE)
+```
+
+The plot below demonstrates that this clustering technique does a pretty good job at capturing the information we want. Moving forward with sample QC we used the reassigned inferred sexes of the samples.
+
+```{r kmeans plotting}
+reSexed.plot <- ggplot(reSexed_samples_table %>%
+         dplyr::arrange(predicted.sex),
+       mapping = aes(x = sumxy_int, 
+                     y = y_int, 
+                     fill = inferred.sex,
+                     colour = predicted.sex,
+                     text = sample,
+                     label = resexed,
+                     label2  = bad_sample)) + 
+  geom_point(shape = 21,size = 3, alpha = 0.7) + 
+  scale_colour_manual(values =  predicted.sex.palette) +
+  scale_fill_manual(values = c(unique(predicted.sex.palette)[1:2])) +
+  QCtheme
+
+ggplotly(reSexed.plot, 
+         tooltip = c("text","label","label2"))
+```
+
+### Validating reference sample genetic backgrounds
+
+A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
