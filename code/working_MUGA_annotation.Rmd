@@ -23,6 +23,30 @@ QCtheme <- theme_bw() +
   theme(panel.grid = element_blank(),
         axis.text = element_text(colour = "black"),
         axis.title = element_text(colour = "black"))
+
+
+extractParents <- function(x){
+  pre.parents <- stringr::str_split(x, pattern = "[)]")[[1]][1] %>%
+    stringr::str_split(., pattern = "x")
+  parents <- data.frame(gsub(pre.parents[[1]][1],
+                             pattern = "[(]", 
+                             replacement = ""),
+                        pre.parents[[1]][2])
+  colnames(parents) <- c("dam","sire")
+  return(parents)
+}
+
+
+
+callGeno <- function(x){
+      if(x[2] == x[3]){
+        predicted.geno <- x[2]
+      } else {
+        predicted.geno <- "H"
+      }
+      return(predicted.geno)
+    }
+
 ```
 
 ## Reading in reference genotypes and metadata
@@ -66,7 +90,6 @@ above.cutoff <- no.calls %>%
 Of `r length(unique(as.factor(control_allele_freqs$marker)))` markers, `r nrow(no.calls)` failed to genotype at least one sample, and `r nrow(above.cutoff)` markers failed to genotype at least `r cutoff*100`% of samples.
 
 ```{r Plotting no calls, echo=FALSE}
-
 above.cutoff %>%
   dplyr::left_join(.,mm_metadata) %>%
   dplyr::mutate(chr = as.factor(chr)) %>%
@@ -400,3 +423,209 @@ ggplotly(reSexed.plot,
 ### Validating reference sample genetic backgrounds
 
 A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
+
+```{r founder sample breakdown}
+#
+founders <- c("A/J","C57BL/6J","129S1/SvImJ","NOD/ShiLtJ",
+              "NZO/HILtJ","CAST/EiJ","PWK/PhJ","WSB/EiJ")
+
+# Remove flagged markers and flagged samples
+genos.flagged <- control_genotypes %>%
+  tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>%
+  dplyr::left_join(., mm_metadata) %>%
+  # Flagging markers and samples
+  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
+                                             true = "FLAG",
+                                             false = ""),
+                high_missing_sample = dplyr::if_else(condition = sample %in% high.n.samples$sample,
+                                                     true = "FLAG",
+                                                     false = ""))
+
+
+sample.meta <- reSexed_samples_table %>%
+  dplyr::select(sample, bad_sample, inferred.sex, resexed) %>%
+  dplyr::left_join(predicted.sexes.strings %>%
+                     dplyr::distinct(sample, bg) %>%
+                     # Spot fix bg of one resexed 129S1 sample
+                     dplyr::mutate(bg = if_else(bg == "129S1/SvIJm", 
+                                                true = "129S1/SvImJ", 
+                                                false = bg)))
+
+
+# Extracting parent information
+founder_samples <- sample.meta %>%
+  dplyr::filter(bg %in% c(founders)) %>%
+  dplyr::mutate(dam = bg,
+                sire = bg)
+founder_F1_samples <- sample.meta %>%
+  dplyr::filter(bg == "F1")
+parent.table <- purrr::map(founder_F1_samples$sample, extractParents) %>%
+  Reduce(rbind, .)
+founder_F1_samples_parents <- cbind(founder_F1_samples, parent.table)
+
+all_founder_samples_parents <- founder_samples %>%
+  dplyr::bind_rows(., founder_F1_samples_parents) %>%
+  dplyr::filter(!is.na(sire),
+                sire %in% founders,
+                dam %in% founders)
+
+founder_sample_table <- all_founder_samples_parents %>%
+  dplyr::group_by(dam,sire) %>%
+  dplyr::count() %>%
+  tidyr::pivot_wider(names_from = sire, values_from = n)
+
+DT::datatable(founder_sample_table, escape = FALSE, 
+              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
+
+```
+
+From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8).
+
+From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. The genotypes for intersecting markers between two strains were combined "crossed" to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction.
+
+```{r founder background QC}
+
+
+# Create founder-specific genotype call objects that can be called
+for(f in founders){
+  
+  print(paste("Generating Calls for",f))
+  # Identify samples for each founder
+  founder.geno.array <- all_founder_samples_parents %>%
+    dplyr::filter(bg == f) %>%
+    
+    # Attach all genotypes
+    dplyr::left_join(.,genos.flagged, by = "sample") %>%
+    
+    # Use only high-quality markers
+    dplyr::filter(marker_flag != "FLAG")
+
+  
+  # Count the number of unique allele calls for each marker
+  founder.allele.counts <- founder.geno.array %>%
+    dplyr::group_by(marker, genotype) %>%
+    dplyr::count()
+  
+  # Determine which markers have identical calls across all samples from the same genetic background
+  founder_genos <- founder.allele.counts %>%
+    dplyr::filter(n == max(founder.allele.counts$n)) %>%
+    dplyr::select(-n) %>%
+    `colnames<-`(c("marker",f))
+  
+  # Assign these calls to a founder object
+  assign(paste0("Calls_",f), founder_genos)
+
+}
+
+# Assemble predicted genotypes for F1s and determine concordance with observed genotypes of F1 samples
+founder_background_QC <- list()
+for(f in founders){
+  print(paste0("Beginning QC: ", f))
+  maternalF1s <- all_founder_samples_parents %>%
+    dplyr::filter(dam == f,
+                  bg == "F1") %>%
+    dplyr::mutate(sire = as.factor(sire))
+  sires <- levels(maternalF1s$sire)
+  
+
+  # Import focal founder
+  mom <- get(ls(pattern = paste0("Calls_",f)))
+  mom <- mom[which(mom[,2]!="N"),]
+  
+  geno_match_results <- list()
+  for(s in sires){
+    print(paste0("Calculating concordance: (",f,"x",s,")F1"))
+    dad <- get(ls(pattern = paste0("Calls_",s)))
+    dad <- dad[which(dad[,2]!="N"),]
+    
+    # Generate theoretical F1 genotype with consensus genotypes from both parents
+    cross <- dplyr::inner_join(mom,dad)
+    predicted.genotypes <- apply(cross, 1, FUN = callGeno)
+    cross$predicted_genotypes <- predicted.genotypes
+
+    # Find samples for that F1 background
+    sample_genos <- maternalF1s %>%
+      dplyr::filter(sire == s) %>%
+      # Attach genotypes
+      dplyr::right_join(genos.flagged,.,by = "sample") %>%
+      # Remove markers without clear calls or that were not present in founder strain's consensus genotype object
+      dplyr::filter(marker %in% mom$marker, 
+                    genotype != "N") %>%
+      dplyr::distinct(marker, sample, genotype, .keep_all = TRUE) %>%
+      # Remove markers flagged for high missingness
+      dplyr::filter(marker_flag != "FLAG")
+  
+    # If there was more than one sample for a given F1 background, we checked to see if any markers produced different genotypes (i.e. one sample was H but other was not)
+    marker_disagreements <- sample_genos %>%
+      dplyr::group_by(sample, marker) %>%
+      dplyr::count() %>%
+      dplyr::filter(n != 1) %>%
+      dplyr::left_join(., sample_genos) %>%
+      dplyr::select(-n)
+    
+    # Remove markers with disagreements between samples for the same genetic background 
+    geno_comp <- sample_genos %>%
+      dplyr::filter(!marker %in% marker_disagreements$marker) %>%
+      # Attach the predicted cross genotypes
+      dplyr::inner_join(.,cross %>%
+                          dplyr::ungroup() %>%
+                          dplyr::select(marker,predicted_genotypes)) %>%
+      # Determine whether each sample genotype matches that predicted
+      dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                    true = "MATCH", 
+                                                    false = "NO MATCH"),
+                    alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                               chr == "X" ~ "X",
+                                               chr == "Y" ~ "Y",
+                                               TRUE ~ "Autosome"),
+                    alt_chr = as.factor(alt_chr))
+    
+    # Count the number of marker matches and mismatches
+    geno_comp_summary <- geno_comp %>%
+      dplyr::group_by(sample, inferred.sex, alt_chr, matching_genos) %>%
+      dplyr::count() %>%
+      tidyr::pivot_wider(names_from = matching_genos, values_from = n) %>%
+      dplyr::mutate(dam = f, sire = s)
+  
+  geno_match_results[[s]] <- list(geno_comp, geno_comp_summary)
+  }
+  geno_concordance <- purrr::transpose(geno_match_results)[[1]]
+  geno_comp_summaries <- purrr::transpose(geno_match_results)[[2]]
+  
+  founder_background_QC[[f]] <- list(geno_concordance,
+                                     geno_comp_summaries)
+}
+founder_background_QC_tr <- purrr::transpose(founder_background_QC)
+founder_concordance_df <- purrr::map(.x = founder_background_QC_tr[[2]],
+                                     .f = function(x){Reduce(rbind, x)}) %>% 
+  Reduce(rbind,.)
+founder_concordance_df[is.na(founder_concordance_df)] <- 0
+founder_concordance_df_2 <- founder_concordance_df %>%
+  dplyr::mutate(concordance = MATCH/(MATCH + `NO MATCH`))
+
+founder_palette <- qtl2::CCcolors
+names(founder_palette) <- names(founder_background_QC)
+ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
+                                                    y = concordance,
+                                                    colour = sire,
+                                                    fill = dam)) + 
+  geom_point(shape = 21, size = 4) + 
+  scale_colour_manual(values = founder_palette) + 
+  scale_fill_manual(values = founder_palette) + 
+  facet_grid(inferred.sex~alt_chr, scales = "free", space = "free") +  
+  QCtheme + 
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+```
+
+```{r}
+founder_background_QC_tr[[1]]$`129S1/SvImJ`$`C57BL/6J` %>%
+  dplyr::filter(sample == "(129S1/SvImJxC57BL/6J)F1m15914",
+                chr == "X") %>%
+  dplyr::select(sample, genotype, predicted_genotypes)
+```
+
+
+
+
+
