@@ -24,7 +24,6 @@ QCtheme <- theme_bw() +
         axis.text = element_text(colour = "black"),
         axis.title = element_text(colour = "black"))
 
-
 extractParents <- function(x){
   pre.parents <- stringr::str_split(x, pattern = "[)]")[[1]][1] %>%
     stringr::str_split(., pattern = "x")
@@ -35,18 +34,160 @@ extractParents <- function(x){
   colnames(parents) <- c("dam","sire")
   return(parents)
 }
-
-
-
 callGeno <- function(x){
+  
       if(x[2] == x[3]){
         predicted.geno <- x[2]
       } else {
         predicted.geno <- "H"
       }
       return(predicted.geno)
+}
+callHemiGeno <- function(x){
+    # Mitochondria comes from dam
+    predicted.geno <- x[2]
+    return(predicted.geno)
+}
+callXGeno <- function(sp, isex, data, cross, chrX_markers){
+    
+    if(isex == "m"){
+      
+      male_F1 <- cross %>%
+        dplyr::filter(marker %in% chrX_markers$marker) %>%
+        dplyr::ungroup()
+      male_F1$predicted_genotypes <- apply(male_F1, 1, callHemiGeno)
+      male_recoded_cross <- cross %>%
+        dplyr::filter(!marker %in% chrX_markers$marker) %>%
+        dplyr::bind_rows(.,male_F1)
+      
+      geno_comp_Xrecoded <- data %>%
+        dplyr::inner_join(.,male_recoded_cross %>%
+                        dplyr::ungroup() %>%
+                        dplyr::select(marker,predicted_genotypes)) %>%
+        dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                  true = "MATCH",
+                                                  false = "NO MATCH"),
+                  alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                             chr == "X" ~ "X",
+                                             chr == "Y" ~ "Y",
+                                             is.na(chr) ~ "NA",
+                                             TRUE ~ "Autosome"),
+                  alt_chr = as.factor(alt_chr),
+                  sample = sp,
+                  inferred.sex = isex)
+      
+    } else {
+      
+      geno_comp_Xrecoded <- data %>%
+        dplyr::inner_join(.,cross %>%
+                        dplyr::ungroup() %>%
+                        dplyr::select(marker,predicted_genotypes)) %>%
+        dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                  true = "MATCH",
+                                                  false = "NO MATCH"),
+                  alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                             chr == "X" ~ "X",
+                                             chr == "Y" ~ "Y",
+                                             is.na(chr) ~ "NA",
+                                             TRUE ~ "Autosome"),
+                  alt_chr = as.factor(alt_chr),
+                  sample = sp,
+                  inferred.sex = isex)
     }
+    
+    return(geno_comp_Xrecoded)
+}
+founder_background_QC <- function(dam, sire){
+  
+  dam_strain <- colnames(dam)[2]
+  sire_strain <- colnames(sire)[2]
+  
+  print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
+  maternalF1s <- all_founder_samples_parents %>%
+    dplyr::filter(dam == dam_strain,
+                  sire == sire_strain,
+                  bg == "F1") %>%
+    dplyr::mutate(sire = as.factor(sire),
+                  dam = as.factor(dam))
+  if(nrow(maternalF1s) == 0){
+    return("No samples from this cross; skipping")
+  } else {
+  
 
+  mom <- dam[which(dam[,2]!="N"),]
+  dad <- sire[which(sire[,2]!="N"),]
+  cross <- dplyr::inner_join(mom,dad)
+  
+  alt_chr_M <- genos.flagged %>%
+    dplyr::filter(chr %in% c("M")) %>%
+    dplyr::distinct(marker)
+  
+  alt_chr_X <- genos.flagged %>%
+    dplyr::filter(chr %in% c("X")) %>%
+    dplyr::distinct(marker)
+  
+  
+  predicted.genotypes <- apply(cross, 1, FUN = callGeno)
+  cross$predicted_genotypes <- predicted.genotypes
+  
+  mito_cross <- alt_chr_M %>% dplyr::left_join(., cross)
+  mito_cross$predicted_genotypes <- apply(mito_cross, 1, FUN = callHemiGeno)
+  
+  cross_mitorecoded <- cross %>%
+    dplyr::filter(!marker %in% alt_chr_M$marker) %>%
+    dplyr::bind_rows(.,mito_cross)
+
+  
+  sample_genos <- maternalF1s %>%
+    dplyr::right_join(genos.flagged,.,by = "sample") %>%
+    dplyr::filter(marker %in% mom$marker, genotype != "N") %>%
+    dplyr::distinct(marker, sample, genotype, .keep_all = TRUE) %>%
+    dplyr::filter(marker_flag != "FLAG")
+  
+  marker_disagreements <- sample_genos %>%
+    dplyr::group_by(sample, marker) %>%
+    dplyr::count() %>%
+    dplyr::filter(n != 1) %>%
+    dplyr::left_join(., sample_genos) %>%
+    dplyr::select(-n)
+  
+  geno_comp <- sample_genos %>%
+    dplyr::filter(!marker %in% marker_disagreements$marker) 
+  
+  nested_samples <- geno_comp %>%
+    dplyr::group_by(sample, inferred.sex) %>%
+    tidyr::nest()
+  
+  cross_mitorecoded_list <- list()
+  for(i in 1:length(nested_samples$data)){
+    cross_mitorecoded_list[[i]] <- cross_mitorecoded
+  }
+  
+  alt_chr_X_list <- list()
+  for(i in 1:length(nested_samples$data)){
+    alt_chr_X_list[[i]] <- alt_chr_X
+  }
+  
+  
+  final_geno_comp <- purrr::pmap(.l = list(nested_samples$sample,
+                                           nested_samples$inferred.sex,
+                                           nested_samples$data,
+                                           cross_mitorecoded_list,
+                                           alt_chr_X_list), 
+                                 .f = callXGeno) %>% 
+    Reduce(rbind,.)
+  
+  
+  geno_comp_summary <- final_geno_comp %>%
+    dplyr::group_by(sample, inferred.sex, alt_chr, matching_genos) %>%
+    dplyr::count() %>%
+    tidyr::pivot_wider(names_from = matching_genos, values_from = n) %>%
+    dplyr::mutate(dam = dam_strain, 
+                  sire = sire_strain)
+  
+  return(list(final_geno_comp,geno_comp_summary))
+  }
+}
 ```
 
 ## Reading in reference genotypes and metadata
@@ -518,111 +659,61 @@ for(f in founders){
 }
 
 # Assemble predicted genotypes for F1s and determine concordance with observed genotypes of F1 samples
-founder_background_QC <- list()
-for(f in founders){
-  print(paste0("Beginning QC: ", f))
-  maternalF1s <- all_founder_samples_parents %>%
-    dplyr::filter(dam == f,
-                  bg == "F1") %>%
-    dplyr::mutate(sire = as.factor(sire))
-  sires <- levels(maternalF1s$sire)
-  
 
-  # Import focal founder
-  mom <- get(ls(pattern = paste0("Calls_",f)))
-  mom <- mom[which(mom[,2]!="N"),]
-  
-  geno_match_results <- list()
-  for(s in sires){
-    print(paste0("Calculating concordance: (",f,"x",s,")F1"))
-    dad <- get(ls(pattern = paste0("Calls_",s)))
-    dad <- dad[which(dad[,2]!="N"),]
-    
-    # Generate theoretical F1 genotype with consensus genotypes from both parents
-    cross <- dplyr::inner_join(mom,dad)
-    predicted.genotypes <- apply(cross, 1, FUN = callGeno)
-    cross$predicted_genotypes <- predicted.genotypes
-
-    # Find samples for that F1 background
-    sample_genos <- maternalF1s %>%
-      dplyr::filter(sire == s) %>%
-      # Attach genotypes
-      dplyr::right_join(genos.flagged,.,by = "sample") %>%
-      # Remove markers without clear calls or that were not present in founder strain's consensus genotype object
-      dplyr::filter(marker %in% mom$marker, 
-                    genotype != "N") %>%
-      dplyr::distinct(marker, sample, genotype, .keep_all = TRUE) %>%
-      # Remove markers flagged for high missingness
-      dplyr::filter(marker_flag != "FLAG")
-  
-    # If there was more than one sample for a given F1 background, we checked to see if any markers produced different genotypes (i.e. one sample was H but other was not)
-    marker_disagreements <- sample_genos %>%
-      dplyr::group_by(sample, marker) %>%
-      dplyr::count() %>%
-      dplyr::filter(n != 1) %>%
-      dplyr::left_join(., sample_genos) %>%
-      dplyr::select(-n)
-    
-    # Remove markers with disagreements between samples for the same genetic background 
-    geno_comp <- sample_genos %>%
-      dplyr::filter(!marker %in% marker_disagreements$marker) %>%
-      # Attach the predicted cross genotypes
-      dplyr::inner_join(.,cross %>%
-                          dplyr::ungroup() %>%
-                          dplyr::select(marker,predicted_genotypes)) %>%
-      # Determine whether each sample genotype matches that predicted
-      dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
-                                                    true = "MATCH", 
-                                                    false = "NO MATCH"),
-                    alt_chr = dplyr::case_when(chr == "M" ~ "M",
-                                               chr == "X" ~ "X",
-                                               chr == "Y" ~ "Y",
-                                               TRUE ~ "Autosome"),
-                    alt_chr = as.factor(alt_chr))
-    
-    # Count the number of marker matches and mismatches
-    geno_comp_summary <- geno_comp %>%
-      dplyr::group_by(sample, inferred.sex, alt_chr, matching_genos) %>%
-      dplyr::count() %>%
-      tidyr::pivot_wider(names_from = matching_genos, values_from = n) %>%
-      dplyr::mutate(dam = f, sire = s)
-  
-  geno_match_results[[s]] <- list(geno_comp, geno_comp_summary)
-  }
-  geno_concordance <- purrr::transpose(geno_match_results)[[1]]
-  geno_comp_summaries <- purrr::transpose(geno_match_results)[[2]]
-  
-  founder_background_QC[[f]] <- list(geno_concordance,
-                                     geno_comp_summaries)
+dams <- data.frame(tidyr::expand_grid(founders, founders)) %>%
+  `colnames<-`(c("dams","sires")) %>%
+  filter(dams != sires) %>%
+  dplyr::select(dams) %>%
+  as.list()
+dam_calls <- list()
+for(i in 1:length(dams$dams)){
+  dam_calls[[i]] <- get(ls(pattern = paste0("Calls_",dams$dams[i])))
 }
-founder_background_QC_tr <- purrr::transpose(founder_background_QC)
-founder_concordance_df <- purrr::map(.x = founder_background_QC_tr[[2]],
-                                     .f = function(x){Reduce(rbind, x)}) %>% 
-  Reduce(rbind,.)
+
+sires <- data.frame(tidyr::expand_grid(founders, founders)) %>%
+  `colnames<-`(c("dams","sires")) %>%
+  filter(dams != sires) %>%
+  dplyr::select(sires) %>%
+  as.list()
+sire_calls <- list()
+for(i in 1:length(sires$sires)){
+  sire_calls[[i]] <- get(ls(pattern = paste0("Calls_",sires$sires[i])))
+}
+
+# Run background QC function on all crosses
+bg_QC <- purrr::map2(dam_calls, sire_calls, founder_background_QC)
+founder_background_QC_tr <- bg_QC %>%
+  purrr::keep(., is.list) %>%
+  purrr::transpose(.)
+
+founder_concordance_df <- Reduce(rbind, founder_background_QC_tr[[2]])
 founder_concordance_df[is.na(founder_concordance_df)] <- 0
 founder_concordance_df_2 <- founder_concordance_df %>%
   dplyr::mutate(concordance = MATCH/(MATCH + `NO MATCH`))
 
 founder_palette <- qtl2::CCcolors
-names(founder_palette) <- names(founder_background_QC)
-ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
-                                                    y = concordance,
-                                                    colour = sire,
-                                                    fill = dam)) + 
+names(founder_palette) <- founders
+
+founderQCplot <- ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
+                                                                       y = concordance,
+                                                                       colour = sire,
+                                                                       fill = dam)) + 
   geom_point(shape = 21, size = 4) + 
   scale_colour_manual(values = founder_palette) + 
   scale_fill_manual(values = founder_palette) + 
-  facet_grid(inferred.sex~alt_chr, scales = "free", space = "free") +  
+  facet_grid(alt_chr~inferred.sex) +  
   QCtheme + 
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
+
+ggplotly(founderQCplot)
 ```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 founder_background_QC_tr[[1]]$`129S1/SvImJ`$`C57BL/6J` %>%
   dplyr::filter(sample == "(129S1/SvImJxC57BL/6J)F1m15914",
                 chr == "X") %>%
-  dplyr::select(sample, genotype, predicted_genotypes)
+  dplyr::select(sample, marker, genotype, predicted_genotypes)
 ```
 
 
