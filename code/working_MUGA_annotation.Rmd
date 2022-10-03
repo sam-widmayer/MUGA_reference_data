@@ -6,8 +6,6 @@ output:
     toc: TRUE
     toc_depth: 3
     code_folding: hide
-fig_width: 10
-fig_height: 10
 ---
 
 # MegaMUGA Annotations
@@ -31,7 +29,7 @@ QCtheme <- theme_bw() +
 ###########################################
 # Function designed to extract parent strains from CC/DO founder crosses expressed in proper nomenclature
 # Inputs:
-# Strain ID i.e. (strainxstrain)F1
+# x = Strain ID i.e. (strainxstrain)F1
 # Outputs:
 # Data frame with two character columns: dam (dam strain), sire (sire strain)
 ###########################################
@@ -49,7 +47,7 @@ extractParents <- function(x){
 ###########################################
 # Function designed to recode genotype calls from letter format (i.e. G1, HET, or G2) to numeric format (i.e. 0, 1, 2)
 # Inputs:
-# Column of genotype values
+# x = Column of genotype values
 # Outputs:
 # Numeric vector of recoded genotypes
 ###########################################
@@ -59,32 +57,67 @@ recodeCalls <- function(x){
   levels(y)[which(levels(y) != 1)] <- c(0,2)
   return(as.numeric(as.character(y)))
 }
+
+###########################################
+# Function to form F1 genotypes from founder consensus genotypes
+# Inputs:
+# x = Row of genotype values
+# Outputs:
+# Numeric vector of single letter genotypes
+###########################################
 callGeno <- function(x){
   
+  # Compare genotypes from both strains
       if(x[2] == x[3]){
+        #If they are the same, keep the first value
         predicted.geno <- x[2]
       } else {
+        #If they are different, code as a het
         predicted.geno <- "H"
       }
       return(predicted.geno)
 }
+
+###########################################
+# Function to form F1 genotypes from founder consensus genotypes
+# Inputs:
+# x = Row of genotype values
+# Outputs:
+# Numeric vector of single letter genotypes
+###########################################
 callHemiGeno <- function(x){
     # Mitochondria comes from dam
     predicted.geno <- x[2]
     return(predicted.geno)
 }
+
+###########################################
+# Function to call expected Chr X genotypes for F1 samples based on sample sex and calculate concordance between expected and observed F1 genotypes
+# Inputs:
+# sp = Sample name
+# isex = Sample sex
+# data = Sample genotype data
+# cross = F1 genotype predictions 
+# chrX_markers = data frame of chromosome X marker names
+
+# Outputs:
+# geno_comp_Xrecoded = data frame of sample genotypes and concordance with expected F1 genotypes
+###########################################
 callXGeno <- function(sp, isex, data, cross, chrX_markers){
     
     if(isex == "m"){
       
+      # Filter expected genotypes to just X chromosome markers
       male_F1 <- cross %>%
         dplyr::filter(marker %in% chrX_markers$marker) %>%
         dplyr::ungroup()
+      # Use callHemiGeno function to assign maternal genotypes as expected X genotypes in males
       male_F1$predicted_genotypes <- apply(male_F1, 1, callHemiGeno)
       male_recoded_cross <- cross %>%
         dplyr::filter(!marker %in% chrX_markers$marker) %>%
         dplyr::bind_rows(.,male_F1)
       
+      # Calculate the concordance between genotypes using hemizygous X calls
       geno_comp_Xrecoded <- data %>%
         dplyr::inner_join(.,male_recoded_cross %>%
                                              dplyr::ungroup() %>%
@@ -103,6 +136,7 @@ callXGeno <- function(sp, isex, data, cross, chrX_markers){
       
     } else {
       
+      # Calculate the concordance between genotypes using diploid X calls
       geno_comp_Xrecoded <- data %>%
         dplyr::inner_join(.,cross %>%
                             dplyr::ungroup() %>%
@@ -122,78 +156,101 @@ callXGeno <- function(sp, isex, data, cross, chrX_markers){
     
     return(geno_comp_Xrecoded)
 }
+
+###########################################
+# Function to form reference sample genotypes for comparison
+# Inputs:
+# Consensus genotypes for dam strain
+# Consensus genotypes for sire strain
+
+# Outputs:
+# Numeric vector of recoded genotypes
+###########################################
 founder_background_QC <- function(dam, sire){
   
+  # Extract strain names from genotype objects
   dam_strain <- colnames(dam)[2]
   sire_strain <- colnames(sire)[2]
   
   print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
+  
+  # Identify samples from supplied strains
   maternalF1s <- all_founder_samples_parents %>%
     dplyr::filter(dam == dam_strain,
                   sire == sire_strain,
                   bg == "F1") %>%
     dplyr::mutate(sire = as.factor(sire),
                   dam = as.factor(dam))
+  
   if(nrow(maternalF1s) == 0){
+    # Some crosses don't exist in reference data, can't be QC'd
     return("No samples from this cross; skipping")
   } else {
   
-
+  # Remove consensus genotypes for each strains that are N's
   mom <- dam[which(dam[,2]!="N"),]
   dad <- sire[which(sire[,2]!="N"),]
+  
+  # Form a hypothetical F1 hybrid by combining genotypes from markers that exist in both strains
   cross <- dplyr::inner_join(mom,dad)
   
+  # Form a list of mitochondrial markers
   alt_chr_M <- genos.flagged %>%
     dplyr::filter(chr %in% c("M")) %>%
     dplyr::distinct(marker)
   
+  # Form a list of Chr X markers
   alt_chr_X <- genos.flagged %>%
     dplyr::filter(chr %in% c("X")) %>%
     dplyr::distinct(marker)
   
-  
+  # Predict F1 genotypes from consensus genotypes for each strain
   predicted.genotypes <- apply(cross, 1, FUN = callGeno)
   cross$predicted_genotypes <- predicted.genotypes
   
-  mito_cross <- alt_chr_M %>% dplyr::left_join(., cross)
+  # Filter the artificial F1 hybrid genotype calls down to mitochondrial markers
+  mito_cross <- alt_chr_M %>% 
+    dplyr::left_join(., cross)
+  # Assign maternal mitochondrial genotype to predicted cross instead of hets where strains have different mitotypes
   mito_cross$predicted_genotypes <- apply(mito_cross, 1, FUN = callHemiGeno)
-  
   cross_mitorecoded <- cross %>%
     dplyr::filter(!marker %in% alt_chr_M$marker) %>%
     dplyr::bind_rows(.,mito_cross)
 
-  
+  # Gather genotypes for F1 samples and remove bad markers
   sample_genos <- maternalF1s %>%
     dplyr::right_join(genos.flagged,.,by = "sample") %>%
-    dplyr::filter(marker %in% mom$marker, genotype != "N") %>%
+    dplyr::filter(marker %in% mom$marker, 
+                  genotype != "N") %>%
     dplyr::distinct(marker, sample, genotype, .keep_all = TRUE) %>%
     dplyr::filter(marker_flag != "FLAG")
   
+  # Filter out markers where the same marker within the same sample has different genotypes called
   marker_disagreements <- sample_genos %>%
     dplyr::group_by(sample, marker) %>%
     dplyr::count() %>%
     dplyr::filter(n != 1) %>%
     dplyr::left_join(., sample_genos) %>%
     dplyr::select(-n)
-  
   geno_comp <- sample_genos %>%
     dplyr::filter(!marker %in% marker_disagreements$marker) 
   
+  # Nest genotypes by sample and sex to prepare for calling Chr X genotypes
   nested_samples <- geno_comp %>%
     dplyr::group_by(sample, inferred.sex) %>%
     tidyr::nest()
   
+  # Create a list of mitochondrial and X genotypes to be supplied to the callXGeno function
   cross_mitorecoded_list <- list()
   for(i in 1:length(nested_samples$data)){
     cross_mitorecoded_list[[i]] <- cross_mitorecoded
   }
-  
   alt_chr_X_list <- list()
   for(i in 1:length(nested_samples$data)){
     alt_chr_X_list[[i]] <- alt_chr_X
   }
   
-  
+  # Recode X genotypes to match expectations for male and female samples and form a dataframe of sample genotypes (and concordance status)
   final_geno_comp <- purrr::pmap(.l = list(nested_samples$sample,
                                            nested_samples$inferred.sex,
                                            nested_samples$data,
@@ -202,7 +259,7 @@ founder_background_QC <- function(dam, sire){
                                  .f = callXGeno) %>% 
     Reduce(rbind,.)
   
-  
+  # Tabulate the percentage of concordant genotypes between theoretical and actual F1 samples
   geno_comp_summary <- final_geno_comp %>%
     dplyr::group_by(sample, inferred.sex, alt_chr, matching_genos) %>%
     dplyr::count() %>%
@@ -210,6 +267,7 @@ founder_background_QC <- function(dam, sire){
     dplyr::mutate(dam = dam_strain, 
                   sire = sire_strain)
   
+  # Return genotypes and their summary statistics
   return(list(final_geno_comp,geno_comp_summary))
   }
 }
@@ -907,7 +965,7 @@ multicalled_markers <- founder_sample_genos %>%
 
 First, we joined samples derived from CC/DO founders to their respective genotypes and removed markers with multiple genotype calls across the same sample. These observations make determining founder consensus genotypes complicated; we expect and desire a 1:1:1 relationship between each sample:marker:genotype. We counted `r nrow(multicalled_markers)` such markers. After removing these markers as well as those previously flagged, we constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
 
-```{r founder sample dendrogram}
+```{r founder sample dendrogram, fig.width=5, fig.height=5}
 # Creating a wide genotype table to compute the distance matrix for the dendrogram, filtering out the markers with multiple genotype calls per sample.
 wide_founder_sample_genos <- founder_sample_genos %>%
   dplyr::filter(!marker %in% multicalled_markers$marker) %>%
@@ -918,10 +976,14 @@ wide_founder_sample_genos <- founder_sample_genos %>%
 recoded_wide_sample_genos <- suppressWarnings(data.frame(apply(wide_founder_sample_genos[,2:ncol(wide_founder_sample_genos)], 2, recodeCalls)))
 rownames(recoded_wide_sample_genos) <- wide_founder_sample_genos$sample
 
+# Scaling the genotype matrix, then calculating euclidean distance between all samples
 dd <- dist(scale(recoded_wide_sample_genos), method = "euclidean")
 hc <- hclust(dd, method = "ward.D2")
 
-dend_colors = c("slateblue","blue",qtl2::CCcolors[6:8])
+# Plotting sample distances as a dendrogram
+dend_colors = c("slateblue", # classical strains
+                "blue", 
+                qtl2::CCcolors[6:8]) # official colors for wild-derived CC/DO founder strains
 clus8 = cutree(hc, 5)
 plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
      no.margin = T, label.offset = 1, edge.width = 0.5)
@@ -930,19 +992,19 @@ plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
 
 From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. The genotypes for intersecting markers between two strains were combined "crossed" to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction.
 
-```{r founder background QC}
+```{r founder background QC, fig.width=7, fig.height=4}
 
-# Create founder-specific genotype call objects that can be called
+# Loop creates a data frame of consensus genotype calls for each CC/DO founder strain
+# In this case, "consensus" is designated by all samples of the same strain having identical genotype calls for the same marker
 for(f in founders){
   
   print(paste("Generating Calls for",f))
-  # Identify samples for each founder
+  
+  # Pulling the samples for each CC/DO founder strain
   founder.geno.array <- all_founder_samples_parents %>%
     dplyr::filter(bg == f) %>%
-    
     # Attach all genotypes
     dplyr::left_join(.,genos.flagged, by = "sample") %>%
-    
     # Use only high-quality markers
     dplyr::filter(marker_flag != "FLAG")
 
@@ -963,18 +1025,22 @@ for(f in founders){
 
 }
 
-# Assemble predicted genotypes for F1s and determine concordance with observed genotypes of F1 samples
 
+# Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
+# First form a list of dams that comprise each F1 cross type
 dams <- data.frame(tidyr::expand_grid(founders, founders)) %>%
   `colnames<-`(c("dams","sires")) %>%
+  # Select crosses between strains
   filter(dams != sires) %>%
   dplyr::select(dams) %>%
   as.list()
+# Loop through the list of cross types and pull in genotype call objects
 dam_calls <- list()
 for(i in 1:length(dams$dams)){
   dam_calls[[i]] <- get(ls(pattern = paste0("Calls_",dams$dams[i])))
 }
 
+# Do the same for the sires for each F1
 sires <- data.frame(tidyr::expand_grid(founders, founders)) %>%
   `colnames<-`(c("dams","sires")) %>%
   filter(dams != sires) %>%
@@ -985,27 +1051,38 @@ for(i in 1:length(sires$sires)){
   sire_calls[[i]] <- get(ls(pattern = paste0("Calls_",sires$sires[i])))
 }
 
-# Run background QC function on all crosses
+# Compare the predicted F1 genotypes to the genotypes of each F1 sample
 bg_QC <- purrr::map2(dam_calls, sire_calls, founder_background_QC)
+
+# Keep outputs from the QC that are lists; if QC wasn't performed for a given background, the output was a character vector warning
 founder_background_QC_tr <- bg_QC %>%
   purrr::keep(., is.list) %>%
+  # Instead of having 56 elements of lists of two, have two lists of 56:
+  # 1) All good genotypes from each cross with concordance values
+  # 2) All concordance summaries for each cross
   purrr::transpose(.)
 
+# Bind together all concordance summaries
 founder_concordance_df <- Reduce(rbind, founder_background_QC_tr[[2]])
+# If all markers for a given chromosome type were either concordant or discordant, NAs are returned
+# This step assigns those NA values a 0
 founder_concordance_df[is.na(founder_concordance_df)] <- 0
+# Form concordance as a percentage
 founder_concordance_df_2 <- founder_concordance_df %>%
   dplyr::mutate(concordance = MATCH/(MATCH + `NO MATCH`))
+founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
+                                           levels = c("Autosome","X","Y","M","Other"))
 
+# Interactive plot of the genotype concordance for each sample across chromosome types
 founder_palette <- qtl2::CCcolors
 names(founder_palette) <- founders
-
 founderQCplot <- ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
                                                                        y = concordance,
                                                                        colour = sire,
                                                                        fill = dam)) + 
   geom_point(shape = 21, size = 4) + 
   scale_colour_manual(values = founder_palette) + 
-  scale_fill_manual(values = founder_palette) + 
+  scale_fill_manual(values = founder_palette) +
   facet_grid(alt_chr~inferred.sex) +  
   QCtheme + 
   theme(axis.text.x = element_blank(),
