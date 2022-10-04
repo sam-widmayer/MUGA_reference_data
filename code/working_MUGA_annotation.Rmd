@@ -373,6 +373,7 @@ above.cutoff %>%
               escape = FALSE, 
               options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
 
+
 # Distribution of N frequencies across all markers. Dotted line indicates the 95th percentile of N frequencies (cutoff).
 ggplot(no.calls, mapping = aes(x = freq)) + 
   geom_histogram(bins = 100) +
@@ -436,9 +437,9 @@ We next validated the sexes of each sample using sex chromosome probe intensitie
 
 ```{r Filtering to Chr X Markers}
 ## Reading in genotype intensities
-x_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.X.csv"))
+x_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.X.csv", check.names = T))
 colnames(x_intensities)[1] <- "marker"
-y_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.Y.csv"))
+y_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.Y.csv", check.names = T))
 colnames(y_intensities)[1] <- "marker"
 
 ## Check to see if dimensions of intensity tables are identical, marker orders identical, and sample orders identical
@@ -507,7 +508,7 @@ The first round of inferring predicted sexes used a rough search of the sample n
 prelim.predicted.sexes <- flagged_XY_intensities %>%
   dplyr::mutate(bg = dplyr::case_when(stringr::str_detect(string = sample, 
                                                           pattern = "F1") == TRUE ~ "F1",
-                                      TRUE ~ as.character(sample)),
+                                      TRUE ~ "unknown"),
                 predicted.sex = dplyr::case_when(stringr::str_detect(string = sample, 
                                                           pattern = "F1f") == TRUE ~ "f",
                                       stringr::str_detect(string = sample, 
@@ -516,33 +517,33 @@ prelim.predicted.sexes <- flagged_XY_intensities %>%
 ## Output: flagged intensities with preliminary sex predictions and background assignments among F1 hybrids
 # prelim.predicted.sexes[764:789,] %>% 
 #       dplyr::select(marker, sample, marker_flag, high_missing_sample, predicted.sex)
-#     marker                       sample marker_flag high_missing_sample predicted.sex
-# 764   XiE2 (C57BL/6JxNOD/ShiLtJ)F1f0018        FLAG                                 f
-# 765   XiE2  (C57BL/6JxNZO/HILtJ)F1f0016        FLAG                                 f
-# 766   XiE2 (C57BL/6JxNZO/HILtJ)F1m15853        FLAG                                 m
-# 767   XiE2     (C57BL/6JxPWK/PhJ)F1f002        FLAG                                 f
-# 768   XiE2     (C57BL/6JxPWK/PhJ)F1m005        FLAG                                 m
-# 769   XiE2     (C57BL/6JxPWK/PhJ)F1m005        FLAG                                 m
-# 770   XiE2     (C57BL/6JxSJL/J)F1m35973        FLAG                FLAG             m
-# 771   XiE2    (C57BL/6JxWSB/EiJ)F1f0300        FLAG                                 f
-# 772   XiE2   (C57BL/6JxWSB/EiJ)F1m15714        FLAG                                 m
-# 773   XiE2 (CAST/EiJx129S1/SvImJ)F1f012        FLAG                                 f
-# 774   XiE2 (CAST/EiJx129S1/SvImJ)F1m001        FLAG                                 m
-# 775   XiE2         (CAST/EiJxA/J)F1f002        FLAG                                 f
-# 776   XiE2         (CAST/EiJxA/J)F1f002        FLAG                                 f
-# 777   XiE2         (CAST/EiJxA/J)F1m005        FLAG                                 m
-# 778   XiE2       (CAST/EiJxC57BL/6J)F1m        FLAG                                 m
-# 779   XiE2       (CAST/EiJxC57BL/6J)F1m        FLAG                                 m
-# 780   XiE2  (CAST/EiJxNOD/ShiLtJ)F1f007        FLAG                                 f
-# 781   XiE2  (CAST/EiJxNOD/ShiLtJ)F1f007        FLAG                                 f
-# 782   XiE2      (CAST/EiJxNZO/HILtJ)F1f        FLAG                                 f
-# 783   XiE2      (CAST/EiJxNZO/HILtJ)F1f        FLAG                                 f
-# 784   XiE2      (CAST/EiJxNZO/HILtJ)F1m        FLAG                                 m
-# 785   XiE2      (CAST/EiJxNZO/HILtJ)F1m        FLAG                                 m
-# 786   XiE2     (CAST/EiJxPWK/PhJ)F10123        FLAG                           unknown
-# 787   XiE2    (CAST/EiJxPWK/PhJ)F1f0163        FLAG                                 f
-# 788   XiE2    (CAST/EiJxWSB/EiJ)F1f0113        FLAG                                 f
-# 789   XiE2    (CAST/EiJxWSB/EiJ)F1m0096        FLAG                                 m
+#     marker                         sample marker_flag high_missing_sample predicted.sex
+# 764   XiE2  X.C57BL.6JxNOD.ShiLtJ.F1f0018        FLAG                                 f
+# 765   XiE2   X.C57BL.6JxNZO.HILtJ.F1f0016        FLAG                                 f
+# 766   XiE2  X.C57BL.6JxNZO.HILtJ.F1m15853        FLAG                                 m
+# 767   XiE2      X.C57BL.6JxPWK.PhJ.F1f002        FLAG                                 f
+# 768   XiE2      X.C57BL.6JxPWK.PhJ.F1m005        FLAG                                 m
+# 769   XiE2    X.C57BL.6JxPWK.PhJ.F1m005.1        FLAG                                 m
+# 770   XiE2      X.C57BL.6JxSJL.J.F1m35973        FLAG                FLAG             m
+# 771   XiE2     X.C57BL.6JxWSB.EiJ.F1f0300        FLAG                                 f
+# 772   XiE2    X.C57BL.6JxWSB.EiJ.F1m15714        FLAG                                 m
+# 773   XiE2  X.CAST.EiJx129S1.SvImJ.F1f012        FLAG                                 f
+# 774   XiE2  X.CAST.EiJx129S1.SvImJ.F1m001        FLAG                                 m
+# 775   XiE2          X.CAST.EiJxA.J.F1f002        FLAG                                 f
+# 776   XiE2        X.CAST.EiJxA.J.F1f002.1        FLAG                                 f
+# 777   XiE2          X.CAST.EiJxA.J.F1m005        FLAG                                 m
+# 778   XiE2        X.CAST.EiJxC57BL.6J.F1m        FLAG                                 m
+# 779   XiE2      X.CAST.EiJxC57BL.6J.F1m.1        FLAG                                 m
+# 780   XiE2   X.CAST.EiJxNOD.ShiLtJ.F1f007        FLAG                                 f
+# 781   XiE2 X.CAST.EiJxNOD.ShiLtJ.F1f007.1        FLAG                                 f
+# 782   XiE2       X.CAST.EiJxNZO.HILtJ.F1f        FLAG                                 f
+# 783   XiE2     X.CAST.EiJxNZO.HILtJ.F1f.1        FLAG                                 f
+# 784   XiE2       X.CAST.EiJxNZO.HILtJ.F1m        FLAG                                 m
+# 785   XiE2     X.CAST.EiJxNZO.HILtJ.F1m.1        FLAG                                 m
+# 786   XiE2      X.CAST.EiJxPWK.PhJ.F10123        FLAG                           unknown
+# 787   XiE2     X.CAST.EiJxPWK.PhJ.F1f0163        FLAG                                 f
+# 788   XiE2     X.CAST.EiJxWSB.EiJ.F1f0113        FLAG                                 f
+# 789   XiE2     X.CAST.EiJxWSB.EiJ.F1m0096        FLAG                                 m
 
 ## Filtering down to samples without preliminary sex predictions
 unknown <- prelim.predicted.sexes %>%
@@ -563,17 +564,17 @@ unknown <- prelim.predicted.sexes %>%
 #       dplyr::mutate(mouse.id.3 = stringr::str_sub(sample, -3)) %>% 
 #       dplyr::select(sample, mouse.id.3) %>% 
 #       head(10)
-#                      sample mouse.id.3
-# 1  (CAST/EiJxPWK/PhJ)F10123        123
-# 2                 017-FH-F1        -F1
-# 3        124S4/SvJaeJm39510        510
-# 4           129P1/ReJm35858        858
-# 5             129P2/OlaHsdm        sdm
-# 6             129P2/OlaHsdm        sdm
-# 7             129P3/Jm37959        959
-# 8              129S1/SvImJf        mJf
-# 9              129S1/SvImJf        mJf
-# 10         129S1/SvImJf0827        827
+#                       sample mouse.id.3
+# 1  X.CAST.EiJxPWK.PhJ.F10123        123
+# 2                 X017.FH.F1        .F1
+# 3        X124S4.SvJaeJm39510        510
+# 4           X129P1.ReJm35858        858
+# 5             X129P2.OlaHsdm        sdm
+# 6           X129P2.OlaHsdm.1        m.1
+# 7             X129P3.Jm37959        959
+# 8              X129S1.SvImJf        mJf
+# 9            X129S1.SvImJf.1        f.1
+# 10         X129S1.SvImJf0827        827
 
 #####################################################################################
 ## 2) Assigning the predicted sex based on expected mouse nomenclature convention. ##
@@ -583,23 +584,25 @@ unknown <- prelim.predicted.sexes %>%
 # unknown %>% 
 #         dplyr::mutate(mouse.id.5= stringr::str_sub(sample, -5),
 #                       predicted.sex.5 = 
-#                     dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m",                                     stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f",                                     TRUE ~ "unknown")) %>% 
+#                     dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m", 
+#                                      stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f", 
+# `                                    TRUE ~ "unknown")) %>% 
 #         dplyr::select(sample, mouse.id.5, predicted.sex.5) %>% head(14)
-#                      sample mouse.id.5 predicted.sex.5
-# 1  (CAST/EiJxPWK/PhJ)F10123      10123         unknown
-# 2                 017-FH-F1      FH-F1               f
-# 3        124S4/SvJaeJm39510      39510         unknown
-# 4           129P1/ReJm35858      35858         unknown
-# 5             129P2/OlaHsdm      aHsdm         unknown
-# 6             129P2/OlaHsdm      aHsdm         unknown
-# 7             129P3/Jm37959      37959         unknown
-# 8              129S1/SvImJf      vImJf         unknown
-# 9              129S1/SvImJf      vImJf         unknown
-# 10         129S1/SvImJf0827      f0827               f
-# 11         129S1/SvImJf0827      f0827               f
-# 12             129S1/SvImJm      vImJm         unknown
-# 13             129S1/SvImJm      vImJm         unknown
-# 14         129S1/SvImJm1314      m1314               m
+#                       sample mouse.id.5 predicted.sex.5
+# 1  X.CAST.EiJxPWK.PhJ.F10123      10123         unknown
+# 2                 X017.FH.F1      FH.F1               f
+# 3        X124S4.SvJaeJm39510      39510         unknown
+# 4           X129P1.ReJm35858      35858         unknown
+# 5             X129P2.OlaHsdm      aHsdm         unknown
+# 6           X129P2.OlaHsdm.1      sdm.1         unknown
+# 7             X129P3.Jm37959      37959         unknown
+# 8              X129S1.SvImJf      vImJf         unknown
+# 9            X129S1.SvImJf.1      mJf.1               m
+# 10         X129S1.SvImJf0827      f0827               f
+# 11       X129S1.SvImJf0827.1      827.1         unknown
+# 12             X129S1.SvImJm      vImJm         unknown
+# 13           X129S1.SvImJm.1      mJm.1               m
+# 14         X129S1.SvImJm1314      m1314               m
 
 ##############################################################################################
 # 3) Inferring the strain background by removing the mouse id from the sample name when a sex is predicted. In certain cases, symbols had to be extracted prior to sex and background inference.
@@ -624,53 +627,39 @@ unknown <- prelim.predicted.sexes %>%
 #                                                  replacement = ""), 
 #                               false = bg)) %>% 
 #     dplyr::select(sample, mouse.id.5, predicted.sex.5, bg) %>% head(14)
-#                      sample mouse.id.5 predicted.sex.5                 bg
-# 1  (CAST/EiJxPWK/PhJ)F10123      10123         unknown                 F1
-# 2                 017-FH-F1      FH-F1               f                 F1
-# 3        124S4/SvJaeJm39510      39510         unknown 124S4/SvJaeJm39510
-# 4           129P1/ReJm35858      35858         unknown    129P1/ReJm35858
-# 5             129P2/OlaHsdm      aHsdm         unknown      129P2/OlaHsdm
-# 6             129P2/OlaHsdm      aHsdm         unknown      129P2/OlaHsdm
-# 7             129P3/Jm37959      37959         unknown      129P3/Jm37959
-# 8              129S1/SvImJf      vImJf         unknown       129S1/SvImJf
-# 9              129S1/SvImJf      vImJf         unknown       129S1/SvImJf
-# 10         129S1/SvImJf0827      f0827               f        129S1/SvImJ
-# 11         129S1/SvImJf0827      f0827               f        129S1/SvImJ
-# 12             129S1/SvImJm      vImJm         unknown       129S1/SvImJm
-# 13             129S1/SvImJm      vImJm         unknown       129S1/SvImJm
-# 14         129S1/SvImJm1314      m1314               m        129S1/SvImJ
+#                       sample mouse.id.5 predicted.sex.5                  bg
+# 1  X.CAST.EiJxPWK.PhJ.F10123      10123         unknown                  F1
+# 2                 X017.FH.F1      FH.F1               f                  F1
+# 3        X124S4.SvJaeJm39510      39510         unknown X124S4.SvJaeJm39510
+# 4           X129P1.ReJm35858      35858         unknown    X129P1.ReJm35858
+# 5             X129P2.OlaHsdm      aHsdm         unknown      X129P2.OlaHsdm
+# 6           X129P2.OlaHsdm.1      sdm.1         unknown    X129P2.OlaHsdm.1
+# 7             X129P3.Jm37959      37959         unknown      X129P3.Jm37959
+# 8              X129S1.SvImJf      vImJf         unknown       X129S1.SvImJf
+# 9            X129S1.SvImJf.1      mJf.1               m          X129S1.SvI
+# 10         X129S1.SvImJf0827      f0827               f        X129S1.SvImJ
+# 11       X129S1.SvImJf0827.1      827.1         unknown X129S1.SvImJf0827.1
+# 12             X129S1.SvImJm      vImJm         unknown       X129S1.SvImJm
+# 13           X129S1.SvImJm.1      mJm.1               m          X129S1.SvI
+# 14         X129S1.SvImJm1314      m1314               m        X129S1.SvImJ
 
 digit.trim <- unknown %>% 
+  # One character
   dplyr::mutate(mouse.id.1 = stringr::str_sub(sample, -1),
                 predicted.sex.1 = dplyr::case_when(stringr::str_sub(mouse.id.1, 1, 1) %in% c("m","M") ~ "m",
                                                    stringr::str_sub(mouse.id.1, 1, 1) %in% c("f","F") ~ "f",
                                                  TRUE ~ "unknown"),
-                bg = if_else(condition = (predicted.sex.1 == "m" | predicted.sex.1 == "f"), 
-                             true = str_replace(string = bg, 
-                                                pattern = mouse.id.1, 
-                                                replacement = ""), 
-                             false = bg),
-                
+                # Three characters
                 mouse.id.3= stringr::str_sub(sample, -3),
                 predicted.sex.3 = dplyr::case_when(stringr::str_sub(mouse.id.3, 1, 1) %in% c("m","M") ~ "m",
                                                  stringr::str_sub(mouse.id.3, 1, 1) %in% c("f","F") ~ "f",
                                                  TRUE ~ "unknown"),
-                bg = if_else(condition = (predicted.sex.3 == "m" | predicted.sex.3 == "f"), 
-                             true = str_replace(string = bg, 
-                                                pattern = mouse.id.3, 
-                                                replacement = ""), 
-                             false = bg),
-                
+                # Four characters
                 mouse.id.4 = stringr::str_sub(sample, -4),
                 predicted.sex.4 = dplyr::case_when(stringr::str_sub(mouse.id.4, 1, 1) %in% c("m","M") ~ "m",
                                                  stringr::str_sub(mouse.id.4, 1, 1) %in% c("f","F") ~ "f",
                                                  TRUE ~ "unknown"),
-                bg = if_else(condition = (predicted.sex.4 == "m" | predicted.sex.4 == "f"), 
-                             true = str_replace(string = bg, 
-                                                pattern = mouse.id.4, 
-                                                replacement = ""), 
-                             false = bg),
-                
+                # Five characters
                 mouse.id.5 = stringr::str_sub(sample, -5),
                 mouse.id.5 = stringr::str_replace(string = mouse.id.5,  ## a couple symbols in these ids mess up the regex search
                                                   pattern = "[:symbol:]", 
@@ -678,12 +667,7 @@ digit.trim <- unknown %>%
                 predicted.sex.5 = dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m",
                                                  stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f",
                                                  TRUE ~ "unknown"),
-                bg = if_else(condition = (predicted.sex.5 == "m" | predicted.sex.5 == "f"),
-                             true = str_replace(string = bg,
-                                                pattern = mouse.id.5,
-                                                replacement = ""),
-                             false = bg),
-                
+                # Six characters
                 mouse.id.6 = stringr::str_sub(sample, -6),
                 mouse.id.6 = stringr::str_replace(string = mouse.id.6,  ## a couple symbols in these ids mess up the regex search
                                                   pattern = "[:punct:]", 
@@ -694,22 +678,43 @@ digit.trim <- unknown %>%
                 predicted.sex.6 = dplyr::case_when(stringr::str_sub(mouse.id.6, 1, 1) %in% c("m","M") ~ "m",
                                                  stringr::str_sub(mouse.id.6, 1, 1) %in% c("f","F") ~ "f",
                                                  TRUE ~ "unknown"),
-                bg = if_else(condition = (predicted.sex.6 == "m" | predicted.sex.6 == "f"), 
-                             true = str_replace(string = bg, 
-                                                pattern = mouse.id.6, 
-                                                replacement = ""), 
-                             false = bg)) %>%
+                # Seven characters
+                mouse.id.7 = stringr::str_sub(sample, -7),
+                mouse.id.7 = stringr::str_replace(string = mouse.id.7,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:punct:]", 
+                                                  replacement = ""),
+                mouse.id.7 = stringr::str_replace(string = mouse.id.7,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:symbol:]", 
+                                                  replacement = ""),
+                predicted.sex.7 = dplyr::case_when(stringr::str_sub(mouse.id.7, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.7, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown"),
+                # Eight characters
+                mouse.id.8 = stringr::str_sub(sample, -8),
+                mouse.id.8 = stringr::str_replace(string = mouse.id.8,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:punct:]", 
+                                                  replacement = ""),
+                mouse.id.8 = stringr::str_replace(string = mouse.id.8,  ## a couple symbols in these ids mess up the regex search
+                                                  pattern = "[:symbol:]", 
+                                                  replacement = ""),
+                predicted.sex.8 = dplyr::case_when(stringr::str_sub(mouse.id.8, 1, 1) %in% c("m","M") ~ "m",
+                                                 stringr::str_sub(mouse.id.8, 1, 1) %in% c("f","F") ~ "f",
+                                                 TRUE ~ "unknown")) %>%
   dplyr::mutate(predicted.sex = dplyr::case_when(predicted.sex.1 == "m" ~ "m", 
                                                  predicted.sex.3 == "m" ~ "m",
                                                  predicted.sex.4 == "m" ~ "m",
                                                  predicted.sex.5 == "m" ~ "m",
                                                  predicted.sex.6 == "m" ~ "m",
+                                                 predicted.sex.7 == "m" ~ "m",
+                                                 predicted.sex.8 == "m" ~ "m",
                                                  
                                                  predicted.sex.1 == "f" ~ "f", 
                                                  predicted.sex.3 == "f" ~ "f",
                                                  predicted.sex.4 == "f" ~ "f",
                                                  predicted.sex.5 == "f" ~ "f",
                                                  predicted.sex.6 == "f" ~ "f",
+                                                 predicted.sex.7 == "f" ~ "f",
+                                                 predicted.sex.8 == "f" ~ "f",
                                                  TRUE ~ "unknown"))
 
 # Removing previously "unknown" samples from initial results and binding newly inferred samples
@@ -726,7 +731,7 @@ predicted.sex.table <- predicted.sexes.strings %>%
 
 ```
 
-This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities. Note there are triplicate KOMP cell DNA JM8 samples.
+This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities.
 
 ```{r Predicted sex table}
 # Table of samples for which sex could not be predicted from sample name alone. Using one marker is fine as an example as the sample info for each marker is identical.
@@ -736,7 +741,7 @@ predicted.sexes.strings %>%
   dplyr::select(sample, bg)
 ```
 
-After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information.
+After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information. In many cases, pulling substrings of sample names as the sex of the sample was too sensitive and misclassified samples.
 
 ```{r Predicted sex visualization}
 
@@ -751,14 +756,15 @@ Xchr.int <- predicted.sexes.strings %>%
   dplyr::summarise(mean.x.chr.int = mean(x.chr.int))
 # Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
 
-# sample                          predicted.sex high_missing_sample mean.x.chr.int
-# <chr>                           <chr>         <chr>                        <dbl>
-# (129S1/SvImJxA/J)F1f0056        f             ""                           1.02 
-# (129S1/SvImJxC57BL/6J)F1f15916  f             ""                           1.04 
-# (129S1/SvImJxC57BL/6J)F1m15914  m             ""                           0.781
-# (129S1/SvImJxCAST/EiJ)F1f005    f             ""                           1.19 
-# (129S1/SvImJxCAST/EiJ)F1m002    m             ""                           0.817
-# (129S1/SvImJxNOD/ShiLtJ)F1f0063 f             ""                           1.05 
+#   sample     predicted.sex high_missing_sample mean.x.chr.int
+#   <chr>      <chr>         <chr>                        <dbl>
+# 1 A.Jf       f             ""                           1.06 
+# 2 A.Jf0374   f             ""                           1.03 
+# 3 A.Jf0374.1 f             ""                           0.974
+# 4 A.Jf0374.2 f             ""                           1.01 
+# 5 A.Jm0111   m             ""                           0.799
+# 6 A.Jm0417   m             ""                           0.786
+
 
 Ychr.int <- predicted.sexes.strings %>%
   dplyr::ungroup() %>%
@@ -768,14 +774,14 @@ Ychr.int <- predicted.sexes.strings %>%
   dplyr::summarise(mean.y.int = mean(y_int))
 # Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
 
-# sample                          predicted.sex high_missing_sample mean.y.int
-# <chr>                           <chr>         <chr>                    <dbl>
-# (129S1/SvImJxA/J)F1f0056        f             ""                      0.0543
-# (129S1/SvImJxC57BL/6J)F1f15916  f             ""                      0.0644
-# (129S1/SvImJxC57BL/6J)F1m15914  m             ""                      0.400 
-# (129S1/SvImJxCAST/EiJ)F1f005    f             ""                      0.0454
-# (129S1/SvImJxCAST/EiJ)F1m002    m             ""                      0.167 
-# (129S1/SvImJxNOD/ShiLtJ)F1f0063 f             ""                      0.071 
+#   sample     predicted.sex high_missing_sample mean.y.int
+#   <chr>      <chr>         <chr>                    <dbl>
+# 1 A.Jf       f             ""                      0.046 
+# 2 A.Jf0374   f             ""                      0.0391
+# 3 A.Jf0374.1 f             ""                      0.0571
+# 4 A.Jf0374.2 f             ""                      0.0526
+# 5 A.Jm0111   m             ""                      0.395 
+# 6 A.Jm0417   m             ""                      0.412 
 
 
 # Column binding the two intensities if the sample information matches
@@ -807,22 +813,6 @@ mean.x.intensities.by.sex.plot <- ggplot(sex.chr.intensities,
 ggplotly(mean.x.intensities.by.sex.plot, 
          tooltip = c("text","label"))
 ```
-
-By visual inspection, we found the following issues with either the sample name-based sex prediction or putative sex mix-ups:
-
--   **129S1/SvImJf**: Predicted as male, plotted with females; this makes sense because following a 1 character search for sex classifier (yielding "f") is a three character search (yielding "mJf"). Might need a specific fix for this sample. Almost certainly a female that was predicted incorrectly.
-
--   **R26FIpe/FIpem997**: Predicted male, plotted with females. Four character search would yield proper mouse ID, but clustered stereotypically with other female samples.
-
--   **Nestin -/- Cre+m; TgIn -/- Cre+m**: Predicted male, plotted with females.
-
--   **(CAST/EiJxPWK/PhJ)F10123**: Predicted female, plotted as male. Capitalized "M" or "F" were treated with equal weight as lowercase sex classifiers in mouse ID. Specific Chr X genotypes should reveal sex (*i.e.* do Chr X calls match CAST/EiJ or PWK/PhJ sample Chr X calls?)
-
--   **017-FH-F1**: Predicted female, plotted as male. Capitalized "F" following five character search would have yielded this prediction. Even without proper nomenclature, the sample's stereotypical clustering would suggest this sample is male.
-
--   **(BALB/cByJxC57BL/6J)F1f31283; (BALB/cJxC57BL/6J)F1f36006**: Predicted female, plotted as male. Samples are from very similar strain backgrounds. Specific Chr X genotypes should reveal sex (*i.e.* do Chr X calls match BALB/cJ samples?).
-
-In addition, all samples for which sex could not be predicted based on sample ID clustered with one sex or the other based on probe intensity.
 
 Because the split between inferred sexes of samples was so distinct, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
 
@@ -897,8 +887,8 @@ A key component of sample QC for our purposes is knowing that markers that we ex
 ```{r founder sample breakdown}
 
 # Vector of founder strain names
-founders <- c("A/J","C57BL/6J","129S1/SvImJ","NOD/ShiLtJ",
-              "NZO/HILtJ","CAST/EiJ","PWK/PhJ","WSB/EiJ")
+founder_strains <- c("A.J","C57BL.6J","129S1.SvImJ","NOD.ShiLtJ",
+              "NZO.HILtJ","CAST.EiJ","PWK.PhJ","WSB.EiJ")
 
 # Re-flag genotypes based on bad markers or bad samples.
 # Inputs:
@@ -925,43 +915,58 @@ genos.flagged <- control_genotypes %>%
 sample.meta <- reSexed_samples_table %>%
   dplyr::select(sample, bad_sample, inferred.sex, resexed) %>%
   dplyr::left_join(predicted.sexes.strings %>%
-                     dplyr::distinct(sample, bg) %>%
-                     # Spot fix bg of one resexed 129S1 sample
-                     dplyr::mutate(bg = if_else(bg == "129S1/SvIJm", 
-                                                true = "129S1/SvImJ", 
-                                                false = bg)))
-
+                     dplyr::distinct(sample, bg))
 
 # From the sample metadata, extract any sample derived from an inbred founder.
 founder_samples <- sample.meta %>%
-  dplyr::filter(bg %in% c(founders)) %>%
-  dplyr::mutate(dam = bg,
-                sire = bg)
+  dplyr::mutate(founder = case_when(str_detect(sample, founder_strains[1]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[2]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[3]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[4]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[5]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[6]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[7]) == TRUE ~ "FOUNDER",
+                                    str_detect(sample, founder_strains[8]) == TRUE ~ "FOUNDER",
+                                    TRUE ~ "NOT CC/DO Founder")) %>%
+  dplyr::filter(founder == "FOUNDER")
 
-# Extract any sample derived from a cross between different founder strains.
-founder_F1_samples <- sample.meta %>%
-  dplyr::filter(bg == "F1")
 
-# Supply each sample strain background, pull out parental strains, and join with samples
-parent.table <- purrr::map(founder_F1_samples$sample, extractParents) %>%
-  Reduce(rbind, .)
-founder_F1_samples_parents <- cbind(founder_F1_samples, parent.table)
+founder_dams <- founder_samples %>%
+  tidyr::separate(sample, sep = "x", into = c("dam","sire"), remove = F) %>%
+  dplyr::mutate(dam = case_when(str_detect(dam, founder_strains[1]) == TRUE ~ founder_strains[1],
+                                str_detect(dam, founder_strains[2]) == TRUE ~ founder_strains[2],
+                                str_detect(dam, founder_strains[3]) == TRUE ~ founder_strains[3],
+                                str_detect(dam, founder_strains[4]) == TRUE ~ founder_strains[4],
+                                str_detect(dam, founder_strains[5]) == TRUE ~ founder_strains[5],
+                                str_detect(dam, founder_strains[6]) == TRUE ~ founder_strains[6],
+                                str_detect(dam, founder_strains[7]) == TRUE ~ founder_strains[7],
+                                str_detect(dam, founder_strains[8]) == TRUE ~ founder_strains[8],
+                                TRUE ~ "NOT CC/DO Founder")) %>%
+  dplyr::filter(dam != "NOT CC/DO Founder")
 
-# Bind together founder sample metadata and F1 sample metadata, removing a few instances where other crosses were tagged by string-based sex prediction
-# Other instances:
-# 017-FH-F1
-# 34-HG-F1
-# 36-PG-F1
-# JF1/Msm35243
-all_founder_samples_parents <- founder_samples %>%
-  dplyr::bind_rows(., founder_F1_samples_parents) %>%
-  dplyr::filter(!is.na(sire),
-                sire %in% founders,
-                dam %in% founders)
+all_founder_samples <- founder_dams %>%
+  dplyr::mutate(weird.founder = case_when(str_detect(sample, "KOMP") == TRUE ~ "FLAG",
+                                          str_detect(sample, "CBA") == TRUE ~ "FLAG",
+                                          str_detect(sample, "AEJ") == TRUE ~ "FLAG",
+                                          str_detect(sample, "SJL") == TRUE ~ "FLAG",
+                                TRUE ~ "")) %>%
+  dplyr::filter(weird.founder == "") %>%
+  dplyr::mutate(sire = case_when(str_detect(sire, founder_strains[1]) == TRUE ~ founder_strains[1],
+                                str_detect(sire, founder_strains[2]) == TRUE ~ founder_strains[2],
+                                str_detect(sire, founder_strains[3]) == TRUE ~ founder_strains[3],
+                                str_detect(sire, founder_strains[4]) == TRUE ~ founder_strains[4],
+                                str_detect(sire, founder_strains[5]) == TRUE ~ founder_strains[5],
+                                str_detect(sire, founder_strains[6]) == TRUE ~ founder_strains[6],
+                                str_detect(sire, founder_strains[7]) == TRUE ~ founder_strains[7],
+                                str_detect(sire, founder_strains[8]) == TRUE ~ founder_strains[8],
+                                TRUE ~ ""),
+                sire = if_else(sire == "", true = dam, false = sire),
+                bg = if_else(dam == sire, "INBRED", "CROSS"))
+
 
 # Count up samples for each founder and resulting cross and display a table
 # Dam names = row names; Sire name = column names
-founder_sample_table <- all_founder_samples_parents %>%
+founder_sample_table <- all_founder_samples %>%
   dplyr::group_by(dam,sire) %>%
   dplyr::count() %>%
   tidyr::pivot_wider(names_from = sire, values_from = n)
@@ -975,15 +980,17 @@ From the table, we can see that all possible pairwise combinations of CC/DO foun
 ```{r multicalled markers}
 # Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
 # Inputs: 
-# 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"       "bad_sample"   "inferred.sex" "resexed"      "bg"           "dam"         "sire")
+# 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
 # 2) All sample genotypes with flag information
-founder_sample_genos <- all_founder_samples_parents %>%
+founder_sample_genos <- all_founder_samples %>%
+  dplyr::select(-weird.founder, -founder) %>%
   dplyr::left_join(.,genos.flagged) %>%
   dplyr::filter(marker_flag != "FLAG",
                 genotype != "N") %>%
   dplyr::distinct(sample, marker, genotype, inferred.sex, resexed, bad_sample, dam, sire)
 
 # Some samples have multiple calls for the same marker genotype. At this step we identify these markers, and later we remove them to form consensus genotypes for each founder. 
+# This should take awhile...
 multicalled_markers <- founder_sample_genos %>%
   dplyr::group_by(marker, sample) %>%
   dplyr::count() %>%
