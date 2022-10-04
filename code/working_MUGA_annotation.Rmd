@@ -33,16 +33,16 @@ QCtheme <- theme_bw() +
 # Outputs:
 # Data frame with two character columns: dam (dam strain), sire (sire strain)
 ###########################################
-extractParents <- function(x){
-  pre.parents <- stringr::str_split(x, pattern = "[)]")[[1]][1] %>%
-    stringr::str_split(., pattern = "x")
-  parents <- data.frame(gsub(pre.parents[[1]][1],
-                             pattern = "[(]", 
-                             replacement = ""),
-                        pre.parents[[1]][2])
-  colnames(parents) <- c("dam","sire")
-  return(parents)
-}
+# extractParents <- function(x){
+#   pre.parents <- stringr::str_split(x, pattern = "[)]")[[1]][1] %>%
+#     stringr::str_split(., pattern = "x")
+#   parents <- data.frame(gsub(pre.parents[[1]][1],
+#                              pattern = "[(]", 
+#                              replacement = ""),
+#                         pre.parents[[1]][2])
+#   colnames(parents) <- c("dam","sire")
+#   return(parents)
+# }
 
 ###########################################
 # Function designed to recode genotype calls from letter format (i.e. G1, HET, or G2) to numeric format (i.e. 0, 1, 2)
@@ -175,10 +175,9 @@ founder_background_QC <- function(dam, sire){
   print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
   
   # Identify samples from supplied strains
-  maternalF1s <- all_founder_samples_parents %>%
+  maternalF1s <- all_founder_samples %>%
     dplyr::filter(dam == dam_strain,
-                  sire == sire_strain,
-                  bg == "F1") %>%
+                  sire == sire_strain) %>%
     dplyr::mutate(sire = as.factor(sire),
                   dam = as.factor(dam))
   
@@ -225,18 +224,8 @@ founder_background_QC <- function(dam, sire){
     dplyr::distinct(marker, sample, genotype, .keep_all = TRUE) %>%
     dplyr::filter(marker_flag != "FLAG")
   
-  # Filter out markers where the same marker within the same sample has different genotypes called
-  marker_disagreements <- sample_genos %>%
-    dplyr::group_by(sample, marker) %>%
-    dplyr::count() %>%
-    dplyr::filter(n != 1) %>%
-    dplyr::left_join(., sample_genos) %>%
-    dplyr::select(-n)
-  geno_comp <- sample_genos %>%
-    dplyr::filter(!marker %in% marker_disagreements$marker) 
-  
   # Nest genotypes by sample and sex to prepare for calling Chr X genotypes
-  nested_samples <- geno_comp %>%
+  nested_samples <- sample_genos %>%
     dplyr::group_by(sample, inferred.sex) %>%
     tidyr::nest()
   
@@ -989,12 +978,12 @@ founder_sample_genos <- all_founder_samples %>%
                 genotype != "N") %>%
   dplyr::distinct(sample, marker, genotype, inferred.sex, resexed, bad_sample, dam, sire)
 
-# Some samples have multiple calls for the same marker genotype. At this step we identify these markers, and later we remove them to form consensus genotypes for each founder. 
-# This should take awhile...
-multicalled_markers <- founder_sample_genos %>%
-  dplyr::group_by(marker, sample) %>%
-  dplyr::count() %>%
-  dplyr::filter(n != 1)
+# # Some samples have multiple calls for the same marker genotype. At this step we identify these markers, and later we remove them to form consensus genotypes for each founder. 
+# # This should take awhile...
+# multicalled_markers <- founder_sample_genos %>%
+#   dplyr::group_by(marker, sample) %>%
+#   dplyr::count() %>%
+#   dplyr::filter(n != 1)
 ```
 
 First, we joined samples derived from CC/DO founders to their respective genotypes and removed markers with multiple genotype calls across the same sample. These observations make determining founder consensus genotypes complicated; we expect and desire a 1:1:1 relationship between each sample:marker:genotype. We counted `r nrow(multicalled_markers)` such markers. After removing these markers as well as those previously flagged, we constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
@@ -1002,7 +991,7 @@ First, we joined samples derived from CC/DO founders to their respective genotyp
 ```{r founder sample dendrogram, fig.width=5, fig.height=5}
 # Creating a wide genotype table to compute the distance matrix for the dendrogram, filtering out the markers with multiple genotype calls per sample.
 wide_founder_sample_genos <- founder_sample_genos %>%
-  dplyr::filter(!marker %in% multicalled_markers$marker) %>%
+  # dplyr::filter(!marker %in% multicalled_markers$marker) %>%
   dplyr::select(sample, marker, genotype) %>%
   tidyr::pivot_wider(names_from = marker, values_from = genotype)
 
@@ -1030,13 +1019,14 @@ From here we curated a set of genotypes for each CC/DO founder strain that were 
 
 # Loop creates a data frame of consensus genotype calls for each CC/DO founder strain
 # In this case, "consensus" is designated by all samples of the same strain having identical genotype calls for the same marker
-for(f in founders){
+for(f in founder_strains){
   
   print(paste("Generating Calls for",f))
   
   # Pulling the samples for each CC/DO founder strain
-  founder.geno.array <- all_founder_samples_parents %>%
-    dplyr::filter(bg == f) %>%
+  founder.geno.array <- all_founder_samples %>%
+    dplyr::filter(dam == f,
+                  sire == f) %>%
     # Attach all genotypes
     dplyr::left_join(.,genos.flagged, by = "sample") %>%
     # Use only high-quality markers
@@ -1062,7 +1052,7 @@ for(f in founders){
 
 # Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
 # First form a list of dams that comprise each F1 cross type
-dams <- data.frame(tidyr::expand_grid(founders, founders)) %>%
+dams <- data.frame(tidyr::expand_grid(founder_strains, founder_strains)) %>%
   `colnames<-`(c("dams","sires")) %>%
   # Select crosses between strains
   filter(dams != sires) %>%
@@ -1075,7 +1065,7 @@ for(i in 1:length(dams$dams)){
 }
 
 # Do the same for the sires for each F1
-sires <- data.frame(tidyr::expand_grid(founders, founders)) %>%
+sires <- data.frame(tidyr::expand_grid(founder_strains, founder_strains)) %>%
   `colnames<-`(c("dams","sires")) %>%
   filter(dams != sires) %>%
   dplyr::select(sires) %>%
@@ -1109,7 +1099,7 @@ founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
 
 # Interactive plot of the genotype concordance for each sample across chromosome types
 founder_palette <- qtl2::CCcolors
-names(founder_palette) <- founders
+names(founder_palette) <- founder_strains
 founderQCplot <- ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
                                                                        y = concordance,
                                                                        colour = sire,
@@ -1148,8 +1138,7 @@ marker_categories <- genos.flagged %>%
   dplyr::mutate(passing_founder_QC = if_else(marker %in% unique(founder_sample_genos_QCdf$marker), 
                                             true = "Yes", 
                                             false = "No"),
-                marker_flag = if_else(marker_flag == "FLAG",true = "Yes",false = "No"),
-                founder_consensus = if_else(!marker %in% multicalled_markers$marker, true = "Yes", false = "No"))
+                marker_flag = if_else(marker_flag == "FLAG",true = "Yes",false = "No"))
 
 # Print a summary table of how markers set is reduced for all files
 marker_categories %>%
