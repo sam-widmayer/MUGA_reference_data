@@ -279,7 +279,7 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 
 ```{r Reading in reference genotypes and metadata}
 # Reading in reference sample genotype data
-control_genotypes <- suppressWarnings(data.table::fread("../data/MMControls/control.genotypes.csv"))
+control_genotypes <- suppressWarnings(data.table::fread("../data/MMControls/control.genotypes.csv", check.names = T))
 colnames(control_genotypes)[1] <- "marker"
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
@@ -291,6 +291,33 @@ mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
 We searched for probes where many mice are missing genotype calls.
 
 ```{r Markers with high "N" counts among reference samples}
+
+# sample_duplicates <- names(table(colnames(control_genotypes)[control_genotypes[,which(duplicated(colnames(control_genotypes)))]]))
+# duplicated_samples_call_list <- list()
+# for(i in 1:length(sample_duplicates)){
+#   
+#   column_indices <- control_genotypes[,which(colnames(control_genotypes) %in% c("marker",sample_duplicates[i]))]
+#   duplicated_samples <- data.frame(control_genotypes)[,column_indices]
+#   colnames(duplicated_samples) <- c("marker")
+#   num_dups <- ncol(duplicated_samples)-1
+#   for(j in 1:num_dups){
+#     colnames(duplicated_samples)[j+1] <- paste0(sample_duplicates[i],".",j-1)
+#     colnames(duplicated_samples)[2] <- sample_duplicates[i]
+#   }
+#   duplicated_samples_call_list[[i]] <- duplicated_samples
+#   
+#   control_genotypes[ , sample_duplicates[i], with = FALSE] <- duplicated_samples[,-1]
+#   
+#   
+#   
+#   
+# }
+# 
+# all_duplicated_sample_calls <- duplicated_samples_call_list %>%
+#   Reduce(full_join,.)
+# 
+
+
 ## Calculating allele frequencies for each marker
 control_allele_freqs <- control_genotypes %>%
   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>%
@@ -1089,4 +1116,71 @@ founderQCplot <- ggplot(data = founder_concordance_df_2, mapping = aes(x = sampl
         axis.ticks.x = element_blank())
 
 ggplotly(founderQCplot)
+```
+
+## Writing reference files
+
+The list of output file types following QC is as follows:
+-   Genotype file; rows = markers, columns = samples
+-   Probe intensity file; rows = markers, columns = samples
+-   Sample metadata; columns = sample, strain, sex
+
+Each file type is generated for:
+-   All good samples
+-   Eight CC/DO founder strains
+
+```{r summarize marker sets}
+# Collect founder QC genotypes from evaluation list
+founder_sample_genos_QCdf <- founder_background_QC_tr[[1]] %>%
+  Reduce(rbind,.)
+
+# Categorize genotypes based on flags and consensus status
+marker_categories <- genos.flagged %>%
+  dplyr::select(marker, marker_flag) %>%
+  dplyr::distinct() %>%
+  dplyr::mutate(passing_founder_QC = if_else(marker %in% unique(founder_sample_genos_QCdf$marker), 
+                                            true = "Yes", 
+                                            false = "No"),
+                marker_flag = if_else(marker_flag == "FLAG",true = "Yes",false = "No"),
+                founder_consensus = if_else(!marker %in% multicalled_markers$marker, true = "Yes", false = "No"))
+
+# Print a summary table of how markers set is reduced for all files
+marker_categories %>%
+  dplyr::group_by(marker_flag, founder_consensus, passing_founder_QC) %>%
+  dplyr::count() %>%
+  dplyr::arrange(-n) %>%
+  `colnames<-`(c("High N Calls?","Included in Founder Consensus Calls?","Passing Founder QC?","n")) %>%
+  DT::datatable(.)
+```
+
+
+```{r output files}
+# Filter down to good markers for all samples
+good_markers <- marker_categories %>%
+  dplyr::filter(founder_consensus == "Yes",
+                marker_flag == "No",
+                passing_founder_QC == "Yes")
+
+# Filter down to good samples
+bad_samples <- high.n.samples %>%
+  # Even though there are many missing calls for these samples, we want to prioritize samples derived from CC/DO founders
+  dplyr::mutate(keep = dplyr::if_else(sample %in% all_founder_samples_parents$sample, true = "KEEP", "")) %>%
+  dplyr::filter(keep != "KEEP") %>%
+  # In addition, these samples represent wild-derived or non-Mus musculus samples. Therefore, biology might underlie high no-call rates instead of technical errors
+  dplyr::mutate(keep = dplyr::case_when(stringr::str_detect(string = sample, pattern = "JF1/Msm") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "SKIVE/EiJ") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "SPRET/EiJ") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "ZALENDE/EiJ") ~ "KEEP",
+                                        TRUE ~ "")) %>%
+  dplyr::filter(keep != "KEEP")
+
+# Generate genotype file for all good samples
+genotypes_all_markers_filtered <- control_genotypes[which(control_genotypes$marker %in% good_markers$marker),]
+
+
+
+
+colnames(genotypes_all_markers_filtered)[which(colnames(genotypes_all_markers_filtered) %in% bad_samples$sample)]
+colnames(genotypes_all_samples_filtered)[which(colnames(genotypes_all_samples_filtered) %in% bad_samples$sample)]
+
 ```
