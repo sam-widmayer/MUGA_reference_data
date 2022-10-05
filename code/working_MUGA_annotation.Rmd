@@ -964,9 +964,9 @@ DT::datatable(founder_sample_table, escape = FALSE,
 
 ```
 
-From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8).
+From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8). We constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
 
-```{r multicalled markers}
+```{r founder sample dendrogram, fig.width=5, fig.height=5}
 # Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
 # Inputs: 
 # 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
@@ -978,20 +978,9 @@ founder_sample_genos <- all_founder_samples %>%
                 genotype != "N") %>%
   dplyr::distinct(sample, marker, genotype, inferred.sex, resexed, bad_sample, dam, sire)
 
-# # Some samples have multiple calls for the same marker genotype. At this step we identify these markers, and later we remove them to form consensus genotypes for each founder. 
-# # This should take awhile...
-# multicalled_markers <- founder_sample_genos %>%
-#   dplyr::group_by(marker, sample) %>%
-#   dplyr::count() %>%
-#   dplyr::filter(n != 1)
-```
 
-First, we joined samples derived from CC/DO founders to their respective genotypes and removed markers with multiple genotype calls across the same sample. These observations make determining founder consensus genotypes complicated; we expect and desire a 1:1:1 relationship between each sample:marker:genotype. We counted `r nrow(multicalled_markers)` such markers. After removing these markers as well as those previously flagged, we constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
-
-```{r founder sample dendrogram, fig.width=5, fig.height=5}
 # Creating a wide genotype table to compute the distance matrix for the dendrogram, filtering out the markers with multiple genotype calls per sample.
 wide_founder_sample_genos <- founder_sample_genos %>%
-  # dplyr::filter(!marker %in% multicalled_markers$marker) %>%
   dplyr::select(sample, marker, genotype) %>%
   tidyr::pivot_wider(names_from = marker, values_from = genotype)
 
@@ -1142,41 +1131,34 @@ marker_categories <- genos.flagged %>%
 
 # Print a summary table of how markers set is reduced for all files
 marker_categories %>%
-  dplyr::group_by(marker_flag, founder_consensus, passing_founder_QC) %>%
+  dplyr::group_by(marker_flag, passing_founder_QC) %>%
   dplyr::count() %>%
   dplyr::arrange(-n) %>%
-  `colnames<-`(c("High N Calls?","Included in Founder Consensus Calls?","Passing Founder QC?","n")) %>%
+  `colnames<-`(c("High N Calls?","Passing Founder QC?","n")) %>%
   DT::datatable(.)
 ```
 
 
 ```{r output files}
-# Filter down to good markers for all samples
-good_markers <- marker_categories %>%
-  dplyr::filter(founder_consensus == "Yes",
-                marker_flag == "No",
-                passing_founder_QC == "Yes")
-
-# Filter down to good samples
-bad_samples <- high.n.samples %>%
-  # Even though there are many missing calls for these samples, we want to prioritize samples derived from CC/DO founders
-  dplyr::mutate(keep = dplyr::if_else(sample %in% all_founder_samples_parents$sample, true = "KEEP", "")) %>%
-  dplyr::filter(keep != "KEEP") %>%
-  # In addition, these samples represent wild-derived or non-Mus musculus samples. Therefore, biology might underlie high no-call rates instead of technical errors
-  dplyr::mutate(keep = dplyr::case_when(stringr::str_detect(string = sample, pattern = "JF1/Msm") ~ "KEEP",
-                                        stringr::str_detect(string = sample, pattern = "SKIVE/EiJ") ~ "KEEP",
-                                        stringr::str_detect(string = sample, pattern = "SPRET/EiJ") ~ "KEEP",
-                                        stringr::str_detect(string = sample, pattern = "ZALENDE/EiJ") ~ "KEEP",
-                                        TRUE ~ "")) %>%
-  dplyr::filter(keep != "KEEP")
-
-# Generate genotype file for all good samples
-genotypes_all_markers_filtered <- control_genotypes[which(control_genotypes$marker %in% good_markers$marker),]
-
-
-
-
-colnames(genotypes_all_markers_filtered)[which(colnames(genotypes_all_markers_filtered) %in% bad_samples$sample)]
-colnames(genotypes_all_samples_filtered)[which(colnames(genotypes_all_samples_filtered) %in% bad_samples$sample)]
+# # Filter down to good markers for all samples
+# good_markers <- marker_categories %>%
+#   dplyr::filter(marker_flag == "No",
+#                 passing_founder_QC == "Yes")
+# 
+# # Filter down to good samples
+# bad_samples <- high.n.samples %>%
+#   # Even though there are many missing calls for these samples, we want to prioritize samples derived from CC/DO founders
+#   dplyr::mutate(keep = dplyr::if_else(sample %in% all_founder_samples_parents$sample, true = "KEEP", "")) %>%
+#   dplyr::filter(keep != "KEEP") %>%
+#   # In addition, these samples represent wild-derived or non-Mus musculus samples. Therefore, biology might underlie high no-call rates instead of technical errors
+#   dplyr::mutate(keep = dplyr::case_when(stringr::str_detect(string = sample, pattern = "JF1/Msm") ~ "KEEP",
+#                                         stringr::str_detect(string = sample, pattern = "SKIVE/EiJ") ~ "KEEP",
+#                                         stringr::str_detect(string = sample, pattern = "SPRET/EiJ") ~ "KEEP",
+#                                         stringr::str_detect(string = sample, pattern = "ZALENDE/EiJ") ~ "KEEP",
+#                                         TRUE ~ "")) %>%
+#   dplyr::filter(keep != "KEEP")
+# 
+# # Generate genotype file for all good samples
+# genotypes_all_markers_filtered <- control_genotypes[which(control_genotypes$marker %in% good_markers$marker),]
 
 ```
