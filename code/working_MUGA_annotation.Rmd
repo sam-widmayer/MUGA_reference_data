@@ -21,28 +21,12 @@ library(DT)
 library(plotly)
 library(progress)
 library(ape)
+today <- format(Sys.Date(), format="%Y%m%d")
 QCtheme <- theme_bw() + 
   theme(panel.grid = element_blank(),
         axis.text = element_text(colour = "black"),
         axis.title = element_text(colour = "black"))
 
-###########################################
-# Function designed to extract parent strains from CC/DO founder crosses expressed in proper nomenclature
-# Inputs:
-# x = Strain ID i.e. (strainxstrain)F1
-# Outputs:
-# Data frame with two character columns: dam (dam strain), sire (sire strain)
-###########################################
-# extractParents <- function(x){
-#   pre.parents <- stringr::str_split(x, pattern = "[)]")[[1]][1] %>%
-#     stringr::str_split(., pattern = "x")
-#   parents <- data.frame(gsub(pre.parents[[1]][1],
-#                              pattern = "[(]", 
-#                              replacement = ""),
-#                         pre.parents[[1]][2])
-#   colnames(parents) <- c("dam","sire")
-#   return(parents)
-# }
 
 ###########################################
 # Function designed to recode genotype calls from letter format (i.e. G1, HET, or G2) to numeric format (i.e. 0, 1, 2)
@@ -260,6 +244,37 @@ founder_background_QC <- function(dam, sire){
   return(list(final_geno_comp,geno_comp_summary))
   }
 }
+
+###########################################
+# Function to quickly pull strain names from non-founder samples
+# Inputs:
+# Sample IDs
+
+# Outputs:
+# Character vector of strains
+###########################################
+findStrain <- function(x){
+  
+  # Decompose strain from mouse ID for males
+  m_strains <- strsplit(x, split = "m")[[1]]
+  
+  # If the string was actually split using "m" the sample was male
+  if(TRUE %in% str_detect(m_strains, pattern = "X12")){
+    
+    # If there was a 129 or similar mouse with an m in the strain name, some collapsing needs to occur
+    X129_strains <- paste(strsplit(x, split = "m")[[1]][[1]], sep = "m", collapse = "m")
+    return(X129_strains)
+      
+  } else if(length(m_strains) == 1){
+    
+    f_strains <- strsplit(x, split = "f")[[1]][[1]] 
+    return(f_strains)
+  } else {
+    
+    return(m_strains[[1]][[1]])
+  }
+      
+}
 ```
 
 ## Reading in reference genotypes and metadata
@@ -271,6 +286,9 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 control_genotypes <- suppressWarnings(data.table::fread("../data/MMControls/control.genotypes.csv", check.names = T))
 colnames(control_genotypes)[1] <- "marker"
 
+# Later in analysis, lowercase "i" in strain ID eliminates a founder sample from background QC
+colnames(control_genotypes)[which(str_detect(colnames(control_genotypes), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
+
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
 mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
 ```
@@ -280,32 +298,6 @@ mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
 We searched for probes where many mice are missing genotype calls.
 
 ```{r Markers with high "N" counts among reference samples}
-
-# sample_duplicates <- names(table(colnames(control_genotypes)[control_genotypes[,which(duplicated(colnames(control_genotypes)))]]))
-# duplicated_samples_call_list <- list()
-# for(i in 1:length(sample_duplicates)){
-#   
-#   column_indices <- control_genotypes[,which(colnames(control_genotypes) %in% c("marker",sample_duplicates[i]))]
-#   duplicated_samples <- data.frame(control_genotypes)[,column_indices]
-#   colnames(duplicated_samples) <- c("marker")
-#   num_dups <- ncol(duplicated_samples)-1
-#   for(j in 1:num_dups){
-#     colnames(duplicated_samples)[j+1] <- paste0(sample_duplicates[i],".",j-1)
-#     colnames(duplicated_samples)[2] <- sample_duplicates[i]
-#   }
-#   duplicated_samples_call_list[[i]] <- duplicated_samples
-#   
-#   control_genotypes[ , sample_duplicates[i], with = FALSE] <- duplicated_samples[,-1]
-#   
-#   
-#   
-#   
-# }
-# 
-# all_duplicated_sample_calls <- duplicated_samples_call_list %>%
-#   Reduce(full_join,.)
-# 
-
 
 ## Calculating allele frequencies for each marker
 control_allele_freqs <- control_genotypes %>%
@@ -428,8 +420,11 @@ We next validated the sexes of each sample using sex chromosome probe intensitie
 ## Reading in genotype intensities
 x_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.X.csv", check.names = T))
 colnames(x_intensities)[1] <- "marker"
+colnames(x_intensities)[which(str_detect(colnames(x_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
+
 y_intensities <- suppressWarnings(data.table::fread("../data/MMControls/control.Y.csv", check.names = T))
 colnames(y_intensities)[1] <- "marker"
+colnames(y_intensities)[which(str_detect(colnames(y_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
 
 ## Check to see if dimensions of intensity tables are identical, marker orders identical, and sample orders identical
 if((unique(dim(x_intensities) == dim(y_intensities)) && 
@@ -1107,15 +1102,20 @@ ggplotly(founderQCplot)
 ## Writing reference files
 
 The list of output file types following QC is as follows:
+
 -   Genotype file; rows = markers, columns = samples
+
 -   Probe intensity file; rows = markers, columns = samples
+
 -   Sample metadata; columns = sample, strain, sex
 
 Each file type is generated for:
+
 -   All good samples
+
 -   Eight CC/DO founder strains
 
-```{r summarize marker sets}
+```{r summarize marker and samples}
 # Collect founder QC genotypes from evaluation list
 founder_sample_genos_QCdf <- founder_background_QC_tr[[1]] %>%
   Reduce(rbind,.)
@@ -1136,29 +1136,98 @@ marker_categories %>%
   dplyr::arrange(-n) %>%
   `colnames<-`(c("High N Calls?","Passing Founder QC?","n")) %>%
   DT::datatable(.)
+
+# Filter down to good markers for all samples
+good_markers <- marker_categories %>%
+  dplyr::filter(marker_flag == "No",
+                passing_founder_QC == "Yes")
+
+# Filter down to good samples
+bad_samples <- high.n.samples %>%
+  # Even though there are many missing calls for these samples, we want to prioritize samples derived from CC/DO founders
+  dplyr::mutate(keep = dplyr::if_else(sample %in% all_founder_samples$sample, true = "KEEP", "")) %>%
+  dplyr::filter(keep != "KEEP") %>%
+  # In addition, these samples represent wild-derived or non-Mus musculus samples. Therefore, biology might underlie high no-call rates instead of technical errors
+  dplyr::mutate(keep = dplyr::case_when(stringr::str_detect(string = sample, pattern = "JF1.Msm") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "SKIVE.EiJ") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "SPRET.EiJ") ~ "KEEP",
+                                        stringr::str_detect(string = sample, pattern = "ZALENDE.EiJ") ~ "KEEP",
+                                        TRUE ~ "")) %>%
+  dplyr::filter(keep != "KEEP") %>% select(sample)
+bad_samples <- bad_samples$sample
+good_samples <- colnames(control_genotypes)[!colnames(control_genotypes) %in% bad_samples]
 ```
 
+In total, `r nrow(good_markers)` markers and `r length(good_samples)-1` samples passed the QC steps we imposed, and wrote these genotype data and metadata to new reference files.
 
 ```{r output files}
-# # Filter down to good markers for all samples
-# good_markers <- marker_categories %>%
-#   dplyr::filter(marker_flag == "No",
-#                 passing_founder_QC == "Yes")
-# 
-# # Filter down to good samples
-# bad_samples <- high.n.samples %>%
-#   # Even though there are many missing calls for these samples, we want to prioritize samples derived from CC/DO founders
-#   dplyr::mutate(keep = dplyr::if_else(sample %in% all_founder_samples_parents$sample, true = "KEEP", "")) %>%
-#   dplyr::filter(keep != "KEEP") %>%
-#   # In addition, these samples represent wild-derived or non-Mus musculus samples. Therefore, biology might underlie high no-call rates instead of technical errors
-#   dplyr::mutate(keep = dplyr::case_when(stringr::str_detect(string = sample, pattern = "JF1/Msm") ~ "KEEP",
-#                                         stringr::str_detect(string = sample, pattern = "SKIVE/EiJ") ~ "KEEP",
-#                                         stringr::str_detect(string = sample, pattern = "SPRET/EiJ") ~ "KEEP",
-#                                         stringr::str_detect(string = sample, pattern = "ZALENDE/EiJ") ~ "KEEP",
-#                                         TRUE ~ "")) %>%
-#   dplyr::filter(keep != "KEEP")
-# 
-# # Generate genotype file for all good samples
-# genotypes_all_markers_filtered <- control_genotypes[which(control_genotypes$marker %in% good_markers$marker),]
 
+# Generate genotype files for all good samples and all good markers
+reference_genos_all_samples <- control_genotypes[marker %in% good_markers$marker,..good_samples]
+reference_xints_all_samples <- x_intensities[marker %in% good_markers$marker,..good_samples]
+reference_yints_all_samples <- y_intensities[marker %in% good_markers$marker,..good_samples]
+
+# All sample metadata
+pre_metadata <- sample.meta %>%
+  dplyr::select(sample, inferred.sex, resexed) %>%
+  dplyr::mutate(bad_sample = if_else(sample %in% bad_samples, true = "BAD SAMPLE", false = "")) %>%
+  dplyr::rename(sex = inferred.sex)
+
+strain_assignment <- all_founder_samples %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct(sample, dam, sire) %>%
+  dplyr::mutate(strain = if_else(dam == sire, 
+                                 true = dam, 
+                                 false = paste0("(",dam,"x",sire,")F1"))) %>%
+  dplyr::left_join(pre_metadata,.) %>%
+  dplyr::select(sample, sex, resexed, strain)
+
+unassigned_strains <- strain_assignment %>%
+  dplyr::filter(is.na(strain))
+new_strains <- purrr::map(unassigned_strains$sample, findStrain) %>%
+  unlist()
+unassigned_strains$strain <- new_strains
+remaining_nonfounder_samples <- unassigned_strains %>%
+  dplyr::mutate(mouse.id.1 = stringr::str_sub(strain, -1),
+                strain = dplyr::if_else(mouse.id.1 %in% c("m","f"), 
+                                        true = str_sub(string = strain, 1, nchar(strain)-1), 
+                                        false = strain)) %>%
+  dplyr::select(-mouse.id.1) %>%
+  dplyr::mutate(strain = dplyr::case_when(strain %in% c("FVB.M","FVB.M.1","FVB.M.2","FVB") ~ "FVB.NJ",
+                                          strain %in% c("KOMP.cell.DNA.JM8.1","KOMP.cell.DNA.JM8.2") ~ "KOMP.cell.DNA.JM8",
+                                          strain == "PWD" ~ "PWD.PhJ",
+                                          strain == "X129S1.Svl" ~ "X129S1.SvlmJ",
+                                          TRUE ~ strain),
+                strain = dplyr::if_else(str_sub(strain, 1, 2) == "X1", 
+                                        true = str_sub(strain, 2), 
+                                        false = strain),
+                strain = dplyr::if_else(str_sub(strain, 1, 2) == "X.", 
+                                        true = str_sub(strain, 3),  
+                                        false = strain),
+                strain = dplyr::if_else(str_detect(strain, "F1") == TRUE, 
+                                        true = paste0("(",gsub(strain, pattern = ".F1", replacement = ")F1")), 
+                                        false = strain)) %>%
+  dplyr::select(-resexed)
+
+reference_sample_metadata <- strain_assignment %>%
+  dplyr::filter(!is.na(strain)) %>%
+  dplyr::bind_rows(.,remaining_nonfounder_samples) %>%
+  dplyr::mutate(strain = gsub(strain, pattern = "[.]", replacement = "/"),
+                strain = dplyr::case_when(strain == "BTBR/T///tf/J" ~ "BTBR T<+>tf/J",
+                                          strain == "H3f3aSA/Neo/GFP/fl//" ~ "H3f3aSA-Neo-GFP-fl/+",
+                                          strain == "H3f3bSA/Neo/tdTo" ~ "H3f3bSA-Neo-tdTomato-fl/SA-Neo-tdTomato-fl",
+                                          strain == "KOMP/cell/DNA/JM8" ~ "KOMP cell DNA JM8",
+                                          strain == "Oct4/GFP/CreERT2Tg/Tg" ~ "Oct4-GFP-CreERT2Tg/Tg",
+                                          strain == "Sox2/CreTg//Tg/" ~ "Sox2-CreTg/(Tg)",
+                                          strain == "Tgln/////Cre/" ~ "Tgln -/- Cre+",
+                                          strain == "Nestin/////Cre/" ~ "Nestin -/- Cre+",
+                                          TRUE ~ strain))
+
+
+dir.create("../output", showWarnings = F)
+dir.create("../output/MegaMUGA", showWarnings = F)
+write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genotypes.csv")
+write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
+write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
+write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
 ```
