@@ -62,6 +62,26 @@ callGeno <- function(x){
       return(predicted.geno)
 }
 
+## NEED DOCUMENTATION
+removeExtremeInts <- function(mk, data, f){
+
+    sd.x.int <- sd(data$x_int)
+    sd.y.int <- sd(data$y_int)
+    mean.x.int <- mean(data$x_int)
+    mean.y.int <- mean(data$y_int)
+
+    data %>%
+      dplyr::mutate(x.ex = dplyr::if_else(x_int > (mean.x.int + sd.x.int) | x_int > (mean.x.int + sd.x.int), true = "EX", false = ""),
+                    y.ex = dplyr::if_else(y_int > (mean.y.int + sd.y.int) | x_int > (mean.y.int + sd.y.int), true = "EX", false = ""),
+                    sum.xy = x_int + y_int,
+                    flag = dplyr::if_else(genotype == "N" & (x.ex == "EX" | y.ex == "EX"), true = "FLAG", false = "")) %>%
+      dplyr::filter(flag != "FLAG") %>%
+      dplyr::mutate(marker = mk) %>%
+      dplyr::distinct(marker,genotype) %>%
+      dplyr::select(marker,genotype) %>%
+      `colnames<-`(c("marker",f))
+  }
+
 ###########################################
 # Function to form F1 genotypes from founder consensus genotypes
 # Inputs:
@@ -1016,23 +1036,55 @@ for(f in founder_strains){
     # Use only high-quality markers
     dplyr::filter(marker_flag != "FLAG")
 
-  
+
   # Count the number of unique allele calls for each marker
   founder.allele.counts <- founder.geno.array %>%
     dplyr::group_by(marker, genotype) %>%
     dplyr::count()
   
-  # Determine which markers have identical calls across all samples from the same genetic background
-  founder_genos <- founder.allele.counts %>%
+
+  
+  complete_founder_genos <- founder.allele.counts %>%
     dplyr::filter(n == max(founder.allele.counts$n)) %>%
     dplyr::select(-n) %>%
     `colnames<-`(c("marker",f))
+
+  incomplete_founder_genos <- founder.allele.counts %>%
+    dplyr::filter(n != max(founder.allele.counts$n)) %>%
+    dplyr::select(-n) %>%
+    `colnames<-`(c("marker",f))
+
+  incomplete_founder_genos_samples <- founder.geno.array %>%
+    dplyr::filter(marker %in% unique(incomplete_founder_genos$marker)) %>%
+    dplyr::select(sample, genotype, marker)
+
+  incomplete_founder_genos_ints_samples <- long_intensities[,c(1,2,3,6)] %>%
+    dplyr::right_join(.,incomplete_founder_genos_samples) %>%
+    dplyr::left_join(., mm_metadata %>% dplyr::select(marker, chr))
+
+  incomplete_founder_genos_ints_samples_nested <- incomplete_founder_genos_ints_samples %>%
+    dplyr::group_by(marker) %>%
+    tidyr::nest()
   
+  incomplete_founder_consensus <- purrr::pmap(.l = list(incomplete_founder_genos_ints_samples_nested$marker,
+                                                        incomplete_founder_genos_ints_samples_nested$data,
+                                                        rep(f, length(incomplete_founder_genos_ints_samples_nested$data))),
+                                              .f = removeExtremeInts) %>%
+    Reduce(rbind,.)
+
+  recaptured_tally <- incomplete_founder_consensus %>%
+    dplyr::group_by(marker) %>%
+    dplyr::count() %>%
+    dplyr::filter(n == 1)
+
+  founder_genos <- complete_founder_genos %>%
+    dplyr::bind_rows(.,incomplete_founder_consensus %>% dplyr::filter(marker %in% recaptured_tally$marker))
+
+  print(nrow(founder_genos))
   # Assign these calls to a founder object
   assign(paste0("Calls_",f), founder_genos)
 
 }
-
 
 # Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
 # First form a list of dams that comprise each F1 cross type
@@ -1172,7 +1224,6 @@ pre_metadata <- sample.meta %>%
   dplyr::select(sample, inferred.sex, resexed) %>%
   dplyr::mutate(bad_sample = if_else(sample %in% bad_samples, true = "BAD SAMPLE", false = "")) %>%
   dplyr::rename(sex = inferred.sex)
-
 strain_assignment <- all_founder_samples %>%
   dplyr::ungroup() %>%
   dplyr::distinct(sample, dam, sire) %>%
@@ -1181,7 +1232,6 @@ strain_assignment <- all_founder_samples %>%
                                  false = paste0("(",dam,"x",sire,")F1"))) %>%
   dplyr::left_join(pre_metadata,.) %>%
   dplyr::select(sample, sex, resexed, strain)
-
 unassigned_strains <- strain_assignment %>%
   dplyr::filter(is.na(strain))
 new_strains <- purrr::map(unassigned_strains$sample, findStrain) %>%
@@ -1208,7 +1258,6 @@ remaining_nonfounder_samples <- unassigned_strains %>%
                                         true = paste0("(",gsub(strain, pattern = ".F1", replacement = ")F1")), 
                                         false = strain)) %>%
   dplyr::select(-resexed)
-
 reference_sample_metadata <- strain_assignment %>%
   dplyr::filter(!is.na(strain)) %>%
   dplyr::bind_rows(.,remaining_nonfounder_samples) %>%
@@ -1230,4 +1279,69 @@ write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genot
 write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
 write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
 write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
+
+
+# # Founder consensus genotypes
+# founder_consensus_calls <- list(Calls_A.J, Calls_C57BL.6J, Calls_129S1.SvImJ, Calls_NOD.ShiLtJ, 
+#                                 Calls_NZO.HILtJ, Calls_CAST.EiJ, Calls_PWK.PhJ, Calls_WSB.EiJ)
+# filtered_consensus_calls <- purrr::map(founder_consensus_calls, function(x){x %>% dplyr::filter(marker %in% good_markers$marker)}) %>% 
+#   Reduce(full_join, .)
+# colnames(filtered_consensus_calls)[-1] <- gsub(colnames(filtered_consensus_calls)[-1], pattern = "[.]", replacement = "/")
+# 
+# founder_strains_2 <- gsub(founder_strains, pattern = "[.]", replacement =  "/")
+# founder_sample_list <- reference_sample_metadata %>%
+#   dplyr::filter(strain %in% founder_strains_2) %>%
+#   dplyr::select(sample)
+# founder_samples_for_ints <- c("marker",founder_sample_list$sample)
+# 
+# founder_mean_x_int <- x_intensities[marker %in% good_markers$marker,..founder_samples_for_ints] %>%
+#   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "x_int") %>%
+#   dplyr::left_join(., reference_sample_metadata, by = "sample") %>%
+#   dplyr::group_by(marker, strain) %>%
+#   dplyr::summarise(mean_x_int = mean(x_int),
+#                    sd_x_int = sd(x_int))
+# 
+# founder_mean_y_int <- y_intensities[marker %in% good_markers$marker,..founder_samples_for_ints] %>%
+#   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "y_int") %>%
+#   dplyr::left_join(., reference_sample_metadata, by = "sample") %>%
+#   dplyr::group_by(marker, strain) %>%
+#   dplyr::summarise(mean_y_int = mean(y_int),
+#                    sd_y_int = sd(y_int))
+# 
+# 
+# 
+# missing_consensus_calls_nested <- filtered_consensus_calls[!complete.cases(filtered_consensus_calls),] %>%
+#   tidyr::pivot_longer(-marker, names_to = "strain", values_to = "genotype") %>%
+#   dplyr::group_by(marker) %>%
+#   tidyr::nest()
+# 
+# founder_palette_2 <- founder_palette
+# names(founder_palette_2) <- gsub(names(founder_palette_2),pattern = "[.]", replacement = "/")
+# geno_palette <- c("blue","orange","black")
+# 
+# m <- sample(seq(1:length(missing_consensus_calls_nested$marker)), size = 1)
+# ints_gens <- founder_mean_x_int[which(founder_mean_x_int$marker == missing_consensus_calls_nested$marker[[m]]),] %>%
+#   dplyr::left_join(.,founder_mean_y_int[which(founder_mean_y_int$marker == missing_consensus_calls_nested$marker[[m]]),]) %>%
+#   dplyr::left_join(.,missing_consensus_calls_nested$data[[m]])
+# 
+# ggplot() + 
+#   geom_pointrange(data = ints_gens, mapping = aes(x = mean_x_int, 
+#                                                   xmin = mean_x_int - sd_x_int, 
+#                                                   xmax = mean_x_int + sd_x_int,
+#                                                   y = mean_y_int,
+#                                                   fill = strain,
+#                                                   colour = genotype), shape = 21, size = 1) +
+#   geom_pointrange(data = ints_gens, mapping = aes(x = mean_x_int,
+#                                                   y = mean_y_int,
+#                                                   ymin = mean_y_int - sd_y_int, 
+#                                                   ymax = mean_y_int + sd_y_int,
+#                                                   fill = strain,
+#                                                   colour = genotype), shape = 21, size = 1) + 
+#   scale_fill_manual(values = founder_palette_2) + 
+#   scale_colour_manual(values = geno_palette) + 
+#   QCtheme
+#   
+#   
+
+
 ```
