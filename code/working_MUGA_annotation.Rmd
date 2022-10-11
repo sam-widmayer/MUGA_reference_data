@@ -15,12 +15,17 @@ knitr::opts_chunk$set(message = FALSE)
 library(tidyverse)
 library(data.table)
 library(purrr)
+library(furrr)
 library(qtl2)
 library(magrittr)
 library(DT)
 library(plotly)
 library(progress)
 library(ape)
+library(RColorBrewer)
+library(tictoc)
+library(furrr)
+future::plan(multicore)
 today <- format(Sys.Date(), format="%Y%m%d")
 QCtheme <- theme_bw() + 
   theme(panel.grid = element_blank(),
@@ -52,9 +57,9 @@ recodeCalls <- function(x){
 callGeno <- function(x){
   
   # Compare genotypes from both strains
-      if(x[2] == x[3]){
+      if(c(x[[2]] == x[[3]])){
         #If they are the same, keep the first value
-        predicted.geno <- x[2]
+        predicted.geno <- x[[2]]
       } else {
         #If they are different, code as a het
         predicted.geno <- "H"
@@ -91,7 +96,7 @@ removeExtremeInts <- function(mk, data, f){
 ###########################################
 callHemiGeno <- function(x){
     # Mitochondria comes from dam
-    predicted.geno <- x[2]
+    predicted.geno <- x[[2]]
     return(predicted.geno)
 }
 
@@ -172,9 +177,11 @@ callXGeno <- function(sp, isex, data, cross, chrX_markers){
 ###########################################
 founder_background_QC <- function(dam, sire){
   
-  # Extract strain names from genotype objects
-  dam_strain <- colnames(dam)[2]
-  sire_strain <- colnames(sire)[2]
+  # Extract strain names from genotype objects\
+  dam.df <- data.frame(dam)
+  sire.df <- data.frame(sire)
+  dam_strain <- colnames(dam.df)[2]
+  sire_strain <- colnames(sire.df)[2]
   
   print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
   
@@ -191,11 +198,11 @@ founder_background_QC <- function(dam, sire){
   } else {
   
   # Remove consensus genotypes for each strains that are N's
-  mom <- dam[which(dam[,2]!="N"),]
-  dad <- sire[which(sire[,2]!="N"),]
+  mom <- dam.df[which(!dam.df[,2] %in% c("H","N")),]
+  dad <- sire.df[which(!sire.df[,2] %in% c("H","N")),]
   
   # Form a hypothetical F1 hybrid by combining genotypes from markers that exist in both strains
-  cross <- dplyr::inner_join(mom,dad)
+  cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),])
   
   # Form a list of mitochondrial markers
   alt_chr_M <- genos.flagged %>%
@@ -305,29 +312,29 @@ findStrain <- function(x){
 # Outputs:
 # Genotype data with missing founder consensus genotype if it could be determined from probe data from samples of each strain
 ###########################################
+
 findConsensusGenotypes <- function(mk, data){
   
-  ints_gens <- suppressMessages(founder_x_int[which(founder_x_int$marker == mk),] %>%
-                                  dplyr::left_join(.,founder_y_int[which(founder_y_int$marker == mk),]) %>%
-                                  dplyr::left_join(.,control_genotypes[marker == mk,..founder_samples_for_ints] %>%
-                                                     tidyr::pivot_longer(-marker, names_to = "sample", values_to = "sample_genotype")) %>%
-                                  dplyr::left_join(.,data %>% dplyr::rename(consensus_genotype = genotype)) %>%
-                                  dplyr::select(marker, sample, x_int, y_int, inferred.sex, strain, sample_genotype, consensus_genotype) %>%
-                                  dplyr::filter(sample_genotype %in% c("A","C","T","G","H")))
+  # ints_gens <- suppressMessages(founder_x_int[which(founder_x_int$marker == mk),] %>%
+  #                                 dplyr::left_join(.,founder_y_int[which(founder_y_int$marker == mk),]) %>%
+  #                                 dplyr::left_join(.,control_genotypes[marker == mk,..founder_samples_for_ints] %>%
+  #                                                    tidyr::pivot_longer(-marker, names_to = "sample", values_to = "sample_genotype")) %>%
+  #                                 dplyr::left_join(.,data %>% dplyr::rename(consensus_genotype = genotype)) %>%
+  #                                 dplyr::select(marker, sample, x_int, y_int, inferred.sex, strain, sample_genotype, consensus_genotype) %>%
+  #                                 dplyr::filter(sample_genotype %in% c("A","C","T","G","H")))
 
-  n_genos <- if(length(unique(ints_gens$consensus_genotype))-1 == 1){
-    length(unique(ints_gens$sample_genotype[which(ints_gens$sample_genotype %in% c("A","C","T","G","H"))]))
-  } else {
-    length(unique(ints_gens$consensus_genotype))-1
-  }
+# data in place of ints_gens  
   
-  ints_for_kmeans <- ints_gens %>%
+  n_genos <- length(unique(data$sample_genotype[which(data$sample_genotype %in% c("A","C","T","G","H"))]))
+  filtered_data <- data %>%
+    dplyr::filter(sample_genotype %in% c("A","C","T","G","H"))
+  ints_for_kmeans <- filtered_data %>%
     dplyr::select(x_int, y_int)
   
-    consensus_geno_clusters <- kmeans(ints_for_kmeans, centers = n_genos)$cluster
+  consensus_geno_clusters <- kmeans(ints_for_kmeans, centers = n_genos)$cluster
   
   # Joining each sample's cluster assignment to the sample intensity metrics
-  genos.k.means <- ints_gens %>%
+  genos.k.means <- filtered_data %>%
     dplyr::mutate(clust = as.factor(consensus_geno_clusters))
   
   gens_by_cluster_tab <- genos.k.means %>%
@@ -337,6 +344,7 @@ findConsensusGenotypes <- function(mk, data){
   
   
   top_clusters <- gens_by_cluster_tab %>%
+    dplyr::filter(!is.na(consensus_genotype)) %>%
     dplyr::ungroup() %>%
     dplyr::distinct(sample_genotype, clust) %>%
     dplyr::rename(consensus_genotype = sample_genotype)
@@ -352,18 +360,19 @@ findConsensusGenotypes <- function(mk, data){
   #     dplyr::select(-n)
   # }
   # Samples are then recoded according to the k-means assigned sexes
-  unknown_before <- ints_gens %>%
+  unknown_before <- filtered_data %>%
     dplyr::filter(is.na(consensus_genotype))
   
   recoded_consensus_genotypes <- genos.k.means %>%
     dplyr::select(-consensus_genotype) %>%
     dplyr::left_join(.,top_clusters, by = "clust") %>%
+    dplyr::mutate(marker = mk) %>% 
     dplyr::mutate(recoded = dplyr::if_else(sample %in% unknown_before$sample, true = "RECODED", false = "")) %>%
     dplyr::select(-clust)
   
-  recoded <- suppressWarnings(recoded_consensus_genotypes %>%
-                                dplyr::distinct(marker, strain, consensus_genotype) %>% 
-                                tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype))
+  recoded <- recoded_consensus_genotypes %>%
+    dplyr::distinct(marker, strain, consensus_genotype) %>% 
+    tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype)
   
   
   still_consensus <- recoded_consensus_genotypes %>%
@@ -373,14 +382,15 @@ findConsensusGenotypes <- function(mk, data){
     dplyr::count()
   
   if(2 %in% still_consensus$n){
-    input_data <- data %>%
-      dplyr::mutate(marker = mk) %>%
-      tidyr::pivot_wider(names_from = strain, values_from = genotype)
+    input_data <- suppressWarnings(data %>%
+                                     dplyr::mutate(marker = mk) %>%
+                                     dplyr::distinct(marker, strain, consensus_genotype) %>%
+                                     tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype))
     
-    sample_new_consensus_calls <- recoded_consensus_genotypes %>%
-                  dplyr::distinct(marker, sample, consensus_genotype) %>% 
-                  tidyr::pivot_wider(names_from = sample, 
-                                     values_from = consensus_genotype)
+    sample_new_consensus_calls <- suppressWarnings(recoded_consensus_genotypes %>%
+                                                     dplyr::distinct(marker, sample, consensus_genotype) %>% 
+                                                     tidyr::pivot_wider(names_from = sample, 
+                                                                        values_from = consensus_genotype))
     return(list(input_data,sample_new_consensus_calls,recoded_consensus_genotypes))
   } else{
     
@@ -1123,7 +1133,6 @@ founder_palette <- qtl2::CCcolors
 names(founder_palette) <- founder_strains
 founder_palette_2 <- founder_palette
 names(founder_palette_2) <- gsub(names(founder_palette_2),pattern = "[.]", replacement = "/")
-geno_palette <- c("blue","orange","black")
 for(f in founder_strains){
   
   print(paste("Generating Calls for",f))
@@ -1224,39 +1233,51 @@ founder_y_int <- y_intensities[marker %in% good_markers$marker,..founder_samples
 founder_consensus_complete <- filtered_consensus_calls[complete.cases(filtered_consensus_calls),]
 founder_consensus_incomplete <- filtered_consensus_calls[!complete.cases(filtered_consensus_calls),]
 
+# Founder consensus calls with some missing
+# missing_consensus_calls_nested <- founder_consensus_incomplete %>%
+#   tidyr::pivot_longer(-marker, names_to = "strain", values_to = "genotype") %>%
+#   dplyr::arrange(marker) %>%
+#   dplyr::group_by(marker) %>%
+#   tidyr::nest()
 
 missing_consensus_calls_nested <- founder_consensus_incomplete %>%
   tidyr::pivot_longer(-marker, names_to = "strain", values_to = "genotype") %>%
+  dplyr::full_join(., founder_x_int %>%
+                     dplyr::filter(marker %in% founder_consensus_incomplete$marker) %>%
+                     dplyr::select(marker, sample, strain, x_int)) %>%
+  dplyr::full_join(.,founder_y_int %>%
+                     dplyr::filter(marker %in% founder_consensus_incomplete$marker) %>%
+                     dplyr::select(marker, sample, strain, y_int)) %>%
+  dplyr::rename(consensus_genotype = genotype) %>%
+  dplyr::left_join(., genos.flagged %>%
+                     dplyr::filter(marker_flag != "FLAG",
+                                  marker %in% founder_consensus_incomplete$marker) %>% 
+                     dplyr::select(marker, sample, genotype) %>%
+                     dplyr::rename(sample_genotype = genotype)) %>%
+  dplyr::ungroup() %>%
   dplyr::group_by(marker) %>%
   tidyr::nest()
+
 ```
 
 ```{r}
-m <- sample(seq(1:length(missing_consensus_calls_nested$marker)), size = 1)
-ints_gens <- founder_x_int[which(founder_x_int$marker == missing_consensus_calls_nested$marker[[m]]),] %>%
-  dplyr::left_join(.,founder_y_int[which(founder_y_int$marker == missing_consensus_calls_nested$marker[[m]]),]) %>%
-  dplyr::left_join(.,control_genotypes[marker == missing_consensus_calls_nested$marker[[m]],..founder_samples_for_ints] %>%
-                     tidyr::pivot_longer(-marker, names_to = "sample", values_to = "sample_genotype")) %>%
-  dplyr::left_join(.,missing_consensus_calls_nested$data[[m]] %>% 
-                     dplyr::rename(consensus_genotype = genotype))
 
+m <- sample(seq(1:length(missing_consensus_calls_nested$marker)), size = 1)
 sample_genotypes_plot <- ggplot() +
-  geom_point(data = ints_gens, mapping = aes(x = x_int,
+  geom_point(data = missing_consensus_calls_nested$data[[m]], mapping = aes(x = x_int,
                                              y = y_int,
                                              colour = sample_genotype,
-                                             label = sample), shape = 21) +
-  # scale_fill_manual(values = geno_palette) +
-  # scale_colour_manual(values = geno_palette) +
+                                             label = sample)) +
+  scale_colour_manual(values = brewer.pal(4,"Set2")) +
   QCtheme + 
   ggtitle(missing_consensus_calls_nested$marker[[m]])
 
 consensus_genotypes_plot <- ggplot() +
-  geom_point(data = ints_gens, mapping = aes(x = x_int,
+  geom_point(data = missing_consensus_calls_nested$data[[m]], mapping = aes(x = x_int,
                                              y = y_int,
                                              colour = consensus_genotype,
-                                             label = sample), shape = 21) +
-  # scale_fill_manual(values = geno_palette) +
-  # scale_colour_manual(values = geno_palette) +
+                                             label = sample)) +
+  scale_colour_manual(values = brewer.pal(4,"Set1")) +
   QCtheme + 
   ggtitle(missing_consensus_calls_nested$marker[[m]])
 
@@ -1266,7 +1287,8 @@ ggplotly(consensus_genotypes_plot)
 ```
 
 ```{r visual of consensus reassignment}
-example_output <- findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[m]], data =  missing_consensus_calls_nested$data[[m]])
+example_output <- findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[m]], 
+                                         data =  missing_consensus_calls_nested$data[[m]])
 recoded_consensus_genotypes_plot <- ggplot() +
   geom_point(data = example_output[[3]], mapping = aes(x = x_int,
                                                        y = y_int,
@@ -1274,7 +1296,7 @@ recoded_consensus_genotypes_plot <- ggplot() +
                                                        fill = recoded,
                                                        label = sample), shape = 21) +
   scale_fill_manual(values = c("black","white")) +
-  scale_colour_manual(values = geno_palette) +
+  scale_colour_manual(values = brewer.pal(4,"Set1")) +
   QCtheme + 
   ggtitle(missing_consensus_calls_nested$marker[[m]])
 ggplotly(recoded_consensus_genotypes_plot)
@@ -1282,28 +1304,36 @@ ggplotly(recoded_consensus_genotypes_plot)
 ```
 
 ```{r}
-findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[117]], data = missing_consensus_calls_nested$data[[117]])
-founder_consensus_incomplete_recoded <- purrr::map2(missing_consensus_calls_nested$marker[100:116],
-                                                    missing_consensus_calls_nested$data[100:116],
-                                                    findConsensusGenotypes) %>% purrr::transpose(.)
+founder_consensus_incomplete_recoded <- suppressWarnings(furrr::future_map2(missing_consensus_calls_nested$marker,
+                                                           missing_consensus_calls_nested$data,
+                                                           findConsensusGenotypes))
+founder_consensus_incomplete_recoded_tr <- purrr::transpose(founder_consensus_incomplete_recoded)
+
+new_consensus_founders <- Reduce(bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
+nrow(new_consensus_founders[!complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100
+nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100
+
+clean_founder_consensus_genotypes <- founder_consensus_complete %>%
+  dplyr::bind_rows(.,new_consensus_founders)
 
 
-new_consensus_founders <- Reduce(bind_rows,founder_consensus_incomplete_recoded[[1]])
-new_consensus_founder_samples <- suppressMessages(Reduce(bind_rows,founder_consensus_incomplete_recoded[[2]]))
-
-
-founder_consensus_incomplete_recoded[[2]][29]
-
-
-nrow(new_consensus[!complete.cases(new_consensus),])/length(missing_consensus_calls_nested$marker)*100
-nrow(new_consensus[complete.cases(new_consensus),])/length(missing_consensus_calls_nested$marker)*100
 ```
 
+By using probe intensities and replicate samples among founder strains to re-evaluate consensus genotype calls, we recovered genotypes for `r nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100`% of those for which consensus genotypes were previously missing.
 
 ```{r}
 # Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
+founder_strains_2 <- gsub(founder_strains, pattern = "[.]", replacement =  "/")
+for(f in founder_strains_2){
+  clean_founder_con <- clean_founder_consensus_genotypes %>%
+    dplyr::ungroup() %>%
+    dplyr::select(marker, f)
+  assign(paste0("Clean_Calls_",f), clean_founder_con)
+}
+
+
 # First form a list of dams that comprise each F1 cross type
-dams <- data.frame(tidyr::expand_grid(founder_strains, founder_strains)) %>%
+dams <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
   `colnames<-`(c("dams","sires")) %>%
   # Select crosses between strains
   filter(dams != sires) %>%
@@ -1312,18 +1342,18 @@ dams <- data.frame(tidyr::expand_grid(founder_strains, founder_strains)) %>%
 # Loop through the list of cross types and pull in genotype call objects
 dam_calls <- list()
 for(i in 1:length(dams$dams)){
-  dam_calls[[i]] <- get(ls(pattern = paste0("Calls_",dams$dams[i])))
+  dam_calls[[i]] <- get(ls(pattern = paste0("Clean_Calls_",dams$dams[i])))
 }
 
 # Do the same for the sires for each F1
-sires <- data.frame(tidyr::expand_grid(founder_strains, founder_strains)) %>%
+sires <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
   `colnames<-`(c("dams","sires")) %>%
   filter(dams != sires) %>%
   dplyr::select(sires) %>%
   as.list()
 sire_calls <- list()
 for(i in 1:length(sires$sires)){
-  sire_calls[[i]] <- get(ls(pattern = paste0("Calls_",sires$sires[i])))
+  sire_calls[[i]] <- get(ls(pattern = paste0("Clean_Calls_",sires$sires[i])))
 }
 
 # Compare the predicted F1 genotypes to the genotypes of each F1 sample
@@ -1493,4 +1523,3 @@ write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_int
 write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
 write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")`
 ```
-
