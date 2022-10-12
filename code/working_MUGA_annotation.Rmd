@@ -180,8 +180,8 @@ founder_background_QC <- function(dam, sire){
   # Extract strain names from genotype objects\
   dam.df <- data.frame(dam)
   sire.df <- data.frame(sire)
-  dam_strain <- colnames(dam.df)[2]
-  sire_strain <- colnames(sire.df)[2]
+  dam_strain <- gsub(colnames(dam.df)[2], pattern = "X", replacement = "")
+  sire_strain <- gsub(colnames(sire.df)[2], pattern = "X", replacement = "")
   
   print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
   
@@ -382,23 +382,32 @@ findConsensusGenotypes <- function(mk, data){
     dplyr::count()
   
   if(2 %in% still_consensus$n){
-    input_data <- suppressWarnings(data %>%
+    original_consensus <- suppressWarnings(data %>%
                                      dplyr::mutate(marker = mk) %>%
                                      dplyr::distinct(marker, strain, consensus_genotype) %>%
                                      tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype))
     
-    sample_new_consensus_calls <- suppressWarnings(recoded_consensus_genotypes %>%
-                                                     dplyr::distinct(marker, sample, consensus_genotype) %>% 
-                                                     tidyr::pivot_wider(names_from = sample, 
-                                                                        values_from = consensus_genotype))
-    return(list(input_data,sample_new_consensus_calls,recoded_consensus_genotypes))
+    # sample_new_consensus_calls <- suppressWarnings(recoded_consensus_genotypes %>%
+    #                                                  dplyr::distinct(marker, sample, consensus_genotype) %>% 
+    #                                                  tidyr::pivot_wider(names_from = sample, 
+    #                                                                     values_from = consensus_genotype))
+    
+    original_sample_calls <- suppressWarnings(data %>%
+                                                dplyr::mutate(marker = mk) %>%
+                                                dplyr::distinct(marker, sample, sample_genotype) %>%
+                                                tidyr::pivot_wider(names_from = sample,
+                                                                   values_from = sample_genotype))
+    original_data <- data %>%
+      dplyr::mutate(marker = mk,
+                    recoded = "")
+    return(list(original_consensus, original_sample_calls, original_data))
   } else{
     
     sample_new_consensus_calls <- recoded_consensus_genotypes %>%
                   dplyr::distinct(marker, sample, consensus_genotype) %>% 
                   tidyr::pivot_wider(names_from = sample, 
                                      values_from = consensus_genotype)
-    return(list(recoded,sample_new_consensus_calls,recoded_consensus_genotypes))
+    return(list(recoded, sample_new_consensus_calls, recoded_consensus_genotypes))
   }
 }
 ```
@@ -1304,19 +1313,18 @@ ggplotly(recoded_consensus_genotypes_plot)
 ```
 
 ```{r}
+# findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[322]],data = missing_consensus_calls_nested$data[[322]])
 founder_consensus_incomplete_recoded <- suppressWarnings(furrr::future_map2(missing_consensus_calls_nested$marker,
-                                                           missing_consensus_calls_nested$data,
-                                                           findConsensusGenotypes))
+                                                                            missing_consensus_calls_nested$data,
+                                                                            findConsensusGenotypes))
 founder_consensus_incomplete_recoded_tr <- purrr::transpose(founder_consensus_incomplete_recoded)
 
-new_consensus_founders <- Reduce(bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
-nrow(new_consensus_founders[!complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100
-nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100
+
+new_consensus_founders <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
+updated_founder_sample_genotypes <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[2]])
 
 clean_founder_consensus_genotypes <- founder_consensus_complete %>%
   dplyr::bind_rows(.,new_consensus_founders)
-
-
 ```
 
 By using probe intensities and replicate samples among founder strains to re-evaluate consensus genotype calls, we recovered genotypes for `r nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100`% of those for which consensus genotypes were previously missing.
@@ -1357,6 +1365,8 @@ for(i in 1:length(sires$sires)){
 }
 
 # Compare the predicted F1 genotypes to the genotypes of each F1 sample
+### FIX 129S1 strain referencing in updated founder_background_QC function
+# founder_background_QC(dam = dam_calls[[6]], sire = sire_calls[[6]])
 bg_QC <- purrr::map2(dam_calls, sire_calls, founder_background_QC)
 
 # Keep outputs from the QC that are lists; if QC wasn't performed for a given background, the output was a character vector warning
@@ -1410,7 +1420,7 @@ Each file type is generated for:
 
 -   Eight CC/DO founder strains
 
-```{r summarize marker and samples}
+```{r summarize marker and samples, echo=FALSE}
 # Collect founder QC genotypes from evaluation list
 founder_sample_genos_QCdf <- founder_background_QC_tr[[1]] %>%
   Reduce(rbind,.)
@@ -1455,7 +1465,7 @@ good_samples <- colnames(control_genotypes)[!colnames(control_genotypes) %in% ba
 
 In total, `r nrow(good_markers)` markers and `r length(good_samples)-1` samples passed the QC steps we imposed, and wrote these genotype data and metadata to new reference files.
 
-```{r output files for all samples}
+```{r output files for all samples, eval=FALSE, include=FALSE}
 
 # Generate genotype files for all good samples and all good markers
 reference_genos_all_samples <- control_genotypes[marker %in% good_markers$marker,..good_samples]
@@ -1521,5 +1531,5 @@ dir.create("../output/MegaMUGA", showWarnings = F)
 write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genotypes.csv")
 write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
 write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
-write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")`
+write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
 ```
