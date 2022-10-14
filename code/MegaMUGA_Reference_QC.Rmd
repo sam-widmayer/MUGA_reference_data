@@ -1408,7 +1408,7 @@ ggplotly(sample_genotypes_plot)
 ggplotly(consensus_genotypes_plot)
 ```
 
-We observed `r length(missing_consensus_calls_nested$marker)` markers. For each one, we used the intensity data to identify problematic founder samples, eliminate them, and then use good founder samples to re-classify missing consensus genotypes for strains where they were missing before. Below is the expected output of that process.
+We observed `r length(missing_consensus_calls_nested$marker)` markers without a consensus genotype for at least one strain. For each one, we used the intensity data to identify problematic founder samples, eliminate them, and then use good founder samples to re-classify missing consensus genotypes for strains where they were missing before. Below is the expected output of that process.
 
 ```{r visual of consensus reassignment}
 example_output <- findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[m]], 
