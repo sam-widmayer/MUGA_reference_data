@@ -472,7 +472,7 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 
 ```{r Reading in reference genotypes and metadata}
 # Reading in reference sample genotype data
-control_genotypes <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MMControls/control.genotypes.csv.zip",
+control_genotypes <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.genotypes.csv.zip",
                                                         check.names = T))
 colnames(control_genotypes)[1] <- "marker"
 
@@ -480,7 +480,7 @@ colnames(control_genotypes)[1] <- "marker"
 colnames(control_genotypes)[which(str_detect(colnames(control_genotypes), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
-mm_metadata <- data.table::fread("../data/MMControls/mm_uwisc_v2.csv")
+mm_metadata <- data.table::fread("../data/MegaMUGA/mm_uwisc_v2.csv")
 ```
 
 ## Marker QC: Searching for missing genotype calls
@@ -608,12 +608,12 @@ We next validated the sexes of each sample using sex chromosome probe intensitie
 
 ```{r Filtering to Chr X Markers}
 ## Reading in genotype intensities
-x_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MMControls/control.X.csv.zip",
+x_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.X.csv.zip",
                                                         check.names = T))
 colnames(x_intensities)[1] <- "marker"
 colnames(x_intensities)[which(str_detect(colnames(x_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
 
-y_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MMControls/control.Y.csv.zip",
+y_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.Y.csv.zip",
                                                         check.names = T))
 colnames(y_intensities)[1] <- "marker"
 colnames(y_intensities)[which(str_detect(colnames(y_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
