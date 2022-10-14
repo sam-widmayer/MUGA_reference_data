@@ -67,18 +67,28 @@ callGeno <- function(x){
       return(predicted.geno)
 }
 
-## NEED DOCUMENTATION
+###########################################
+# Function used in the loop which forms founder consensus genotypes prior to background QC
+# Inputs:
+# mk = marker
+# data = genotype data for each founder sample
+# f = founder strain
+# Outputs:
+# data frame with 1 row with columns: marker; consensus genotype for founder strain f 
+###########################################
 removeExtremeInts <- function(mk, data, f){
-
+    
+    # Calculate summary statistics for probe intensities
     sd.x.int <- sd(data$x_int)
     sd.y.int <- sd(data$y_int)
     mean.x.int <- mean(data$x_int)
     mean.y.int <- mean(data$y_int)
 
     data %>%
+      # With a prior expectation provided by an "N" call, determine whether probe intensities are unusual and 
+      # flag samples that meet both criteria
       dplyr::mutate(x.ex = dplyr::if_else(x_int > (mean.x.int + sd.x.int) | x_int > (mean.x.int + sd.x.int), true = "EX", false = ""),
                     y.ex = dplyr::if_else(y_int > (mean.y.int + sd.y.int) | x_int > (mean.y.int + sd.y.int), true = "EX", false = ""),
-                    sum.xy = x_int + y_int,
                     flag = dplyr::if_else(genotype == "N" & (x.ex == "EX" | y.ex == "EX"), true = "FLAG", false = "")) %>%
       dplyr::filter(flag != "FLAG") %>%
       dplyr::mutate(marker = mk) %>%
@@ -183,7 +193,11 @@ founder_background_QC <- function(dam, sire){
   dam_strain <- gsub(colnames(dam.df)[2], pattern = "X", replacement = "")
   sire_strain <- gsub(colnames(sire.df)[2], pattern = "X", replacement = "")
   
-  print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))
+  if(dam_strain == sire_strain){
+    print(paste0("Running QC: ", dam_strain))  
+  } else {
+    print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))  
+  }
   
   # Identify samples from supplied strains
   maternalF1s <- all_founder_samples %>%
@@ -202,7 +216,12 @@ founder_background_QC <- function(dam, sire){
   dad <- sire.df[which(!sire.df[,2] %in% c("H","N")),]
   
   # Form a hypothetical F1 hybrid by combining genotypes from markers that exist in both strains
-  cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),])
+  if(dam_strain == sire_strain){
+    cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),], "marker")
+  } else {
+    cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),])
+  }
+  
   
   # Form a list of mitochondrial markers
   alt_chr_M <- genos.flagged %>%
@@ -304,93 +323,128 @@ findStrain <- function(x){
 }
 
 ###########################################
-# Function to determine additional founder consensus genotypes from probe intensities from replicate samples of founder strains
+# Function to re-derive founder consensus genotypes for founders that are missing consensus calls due to one or a few bad calls
 # Inputs:
-# Marker name
-# Genotype data for each founder strain
+# mk = marker name
+# data = data frame with founder strain samples, intensities, individual sample genotype calls , and existing consensus genotype calls
 
 # Outputs:
-# Genotype data with missing founder consensus genotype if it could be determined from probe data from samples of each strain
+# 1) Consensus genotype calls for each founder strain
+# 2) Wide genotype table for all founder samples
+# 3) Data frame with recoded consensus genotypes for each samples with intensity data and strain names, as well as a flag for whether the sample contributed to a recoded consensus genotype
 ###########################################
 
 findConsensusGenotypes <- function(mk, data){
   
-  # ints_gens <- suppressMessages(founder_x_int[which(founder_x_int$marker == mk),] %>%
-  #                                 dplyr::left_join(.,founder_y_int[which(founder_y_int$marker == mk),]) %>%
-  #                                 dplyr::left_join(.,control_genotypes[marker == mk,..founder_samples_for_ints] %>%
-  #                                                    tidyr::pivot_longer(-marker, names_to = "sample", values_to = "sample_genotype")) %>%
-  #                                 dplyr::left_join(.,data %>% dplyr::rename(consensus_genotype = genotype)) %>%
-  #                                 dplyr::select(marker, sample, x_int, y_int, inferred.sex, strain, sample_genotype, consensus_genotype) %>%
-  #                                 dplyr::filter(sample_genotype %in% c("A","C","T","G","H")))
-
-# data in place of ints_gens  
+  # Examples use mk = "UNC13666424"
   
-  n_genos <- length(unique(data$sample_genotype[which(data$sample_genotype %in% c("A","C","T","G","H"))]))
-  filtered_data <- data %>%
+  # Annotate sample genotype data with summed intensities as a heuristic and filter to sample genotypes assigned a real genotype
+  call_filtered_data <- data %>%
+    dplyr::mutate(sum_int = x_int+y_int) %>%
     dplyr::filter(sample_genotype %in% c("A","C","T","G","H"))
+# Example:
+# Note: note NOD samples missing a consensus genotype, see below for expected results
+#      strain      consensus_genotype sample              x_int y_int sample_genotype sum_int
+#    <chr>       <chr>              <chr>               <dbl> <dbl> <chr>             <dbl>
+#  1 129S1/SvImJ A                  X129S1.SvImJf0827.1 0.716 0.083 A                 0.799
+#  2 129S1/SvImJ A                  X129S1.SvImJm       0.618 0.079 A                 0.697
+#  3 129S1/SvImJ A                  X129S1.SvImJm.1     0.599 0.084 A                 0.683
+#  4 129S1/SvImJ A                  X129S1.SvImJm1314   0.69  0.097 A                 0.787
+#  5 NOD/ShiLtJ  NA                 NOD.ShiLtJf0713.1   0.567 0.07  A                 0.637
+#  6 NOD/ShiLtJ  NA                 NOD.ShiLtJf0713.2   0.6   0.095 A                 0.695
+#  7 NOD/ShiLtJ  NA                 NOD.ShiLtJf0713.3   0.883 0.091 A                 0.974
+#  8 NOD/ShiLtJ  NA                 NOD.ShiLtJm0150     0.646 0.088 A                 0.734
+#  9 NOD/ShiLtJ  NA                 NOD.ShiLtJm1214     0.491 0.057 A                 0.548
+# 10 NOD/ShiLtJ  NA                 NOD.ShiLtJm35324    0.538 0.077 A                 0.615
+# 11 NOD/ShiLtJ  NA                 NOD.ShiLtJm39173    0.649 0.087 A                 0.736
+  
+  # Derive a lower bound by which to identify true N calls using the intensity data
+  real_N_cutoff <- quantile(call_filtered_data$sum_int, probs = seq(0,1,0.05))[[2]]
+  # Use this threshold to identify potential miscalls and remove them in order to recode samples without consensus calls
+  filtered_data <- call_filtered_data %>%
+    dplyr::mutate(test = if_else(sum_int < real_N_cutoff & is.na(consensus_genotype), true = "miscall", false = "")) %>%
+    dplyr::filter(test != "miscall")
+  
+  # Determine the number of clusters to use for k-means clustering of intensity values;
+  # If the previous steps have succeeded, there should be one or two real genotypes segregating and samples can be re-called by k-means
+  n_genos <- length(unique(filtered_data$sample_genotype[which(filtered_data$sample_genotype %in% c("A","C","T","G","H"))]))
   ints_for_kmeans <- filtered_data %>%
     dplyr::select(x_int, y_int)
-  
   consensus_geno_clusters <- kmeans(ints_for_kmeans, centers = n_genos)$cluster
   
   # Joining each sample's cluster assignment to the sample intensity metrics
   genos.k.means <- filtered_data %>%
     dplyr::mutate(clust = as.factor(consensus_geno_clusters))
   
+  # Create a join table to pair up clusters with genotypes
   gens_by_cluster_tab <- genos.k.means %>%
     dplyr::group_by(sample_genotype, consensus_genotype, clust) %>%
     dplyr::count() %>%
     arrange(-n)
+# Example:
+#   sample_genotype consensus_genotype clust     n
+# 1 G               G                  2        32
+# 2 A               A                  1        23
+# 3 A               NA                 1         6
   
-  
+  # Filter the join table to hopefully have a 1:1 relationship between consensus genotypes and clusters
   top_clusters <- gens_by_cluster_tab %>%
     dplyr::filter(!is.na(consensus_genotype)) %>%
     dplyr::ungroup() %>%
     dplyr::distinct(sample_genotype, clust) %>%
     dplyr::rename(consensus_genotype = sample_genotype)
-  
-  # if(length(unique(ints_gens$consensus_genotype))-1 == 1){
-  #   top.clusters <- gens_by_cluster_tab[1:2,] %>%
-  #     dplyr::ungroup() %>%
-  #     dplyr::select(-n,-consensus_genotype) %>%
-  #     dplyr::rename(consensus_genotype = sample_genotype)
-  # } else {
-  #   top.clusters <- gens_by_cluster_tab[1:2,] %>%
-  #     dplyr::ungroup() %>%
-  #     dplyr::select(-n)
-  # }
-  # Samples are then recoded according to the k-means assigned sexes
+  # Example:
+#   consensus_genotype clust
+# 1 G                  2    
+# 2 A                  1    
+
+  # Samples are then recoded according to the k-means assigned genotypes and noted whether a consensus was re-assigned
   unknown_before <- filtered_data %>%
     dplyr::filter(is.na(consensus_genotype))
-  
   recoded_consensus_genotypes <- genos.k.means %>%
     dplyr::select(-consensus_genotype) %>%
     dplyr::left_join(.,top_clusters, by = "clust") %>%
     dplyr::mutate(marker = mk) %>% 
     dplyr::mutate(recoded = dplyr::if_else(sample %in% unknown_before$sample, true = "RECODED", false = "")) %>%
     dplyr::select(-clust)
+  # Example: recoded_consensus_genotypes[20:30,]
+  # Note NOD samples are now recoded with the consensus genotype predicted from k-means across all founder samples
+#      strain      sample              x_int y_int sample_genotype sum_int test  consensus_genotype marker      recoded  
+#    <chr>       <chr>               <dbl> <dbl> <chr>             <dbl> <chr> <chr>              <chr>       <chr>    
+#  1 129S1/SvImJ X129S1.SvImJf0827.1 0.716 0.083 A                 0.799 ""    A                  UNC13666424 ""       
+#  2 129S1/SvImJ X129S1.SvImJm       0.618 0.079 A                 0.697 ""    A                  UNC13666424 ""       
+#  3 129S1/SvImJ X129S1.SvImJm.1     0.599 0.084 A                 0.683 ""    A                  UNC13666424 ""       
+#  4 129S1/SvImJ X129S1.SvImJm1314   0.69  0.097 A                 0.787 ""    A                  UNC13666424 ""       
+#  5 NOD/ShiLtJ  NOD.ShiLtJf0713.1   0.567 0.07  A                 0.637 ""    A                  UNC13666424 "RECODED"
+#  6 NOD/ShiLtJ  NOD.ShiLtJf0713.2   0.6   0.095 A                 0.695 ""    A                  UNC13666424 "RECODED"
+#  7 NOD/ShiLtJ  NOD.ShiLtJf0713.3   0.883 0.091 A                 0.974 ""    A                  UNC13666424 "RECODED"
+#  8 NOD/ShiLtJ  NOD.ShiLtJm0150     0.646 0.088 A                 0.734 ""    A                  UNC13666424 "RECODED"
+#  9 NOD/ShiLtJ  NOD.ShiLtJm35324    0.538 0.077 A                 0.615 ""    A                  UNC13666424 "RECODED"
+# 10 NOD/ShiLtJ  NOD.ShiLtJm39173    0.649 0.087 A                 0.736 ""    A                  UNC13666424 "RECODED"
+# 11 NZO/HILtJ   NZO.HILtJf0588      0.041 0.728 G                 0.769 ""    G                  UNC13666424 ""       
   
+  
+  # Generate a wide table of consensus as expected for output file
   recoded <- recoded_consensus_genotypes %>%
     dplyr::distinct(marker, strain, consensus_genotype) %>% 
     tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype)
+#     marker      `A/J` `C57BL/6J` `129S1/SvImJ` `NOD/ShiLtJ` `NZO/HILtJ` `CAST/EiJ` `PWK/PhJ` `WSB/EiJ`
+#   <chr>       <chr> <chr>      <chr>         <chr>        <chr>       <chr>      <chr>     <chr>    
+# 1 UNC13666424 G     G          A             A            G           A          A         G     
   
-  
+  # Check for any founders that still segregate a genotype within the marker
   still_consensus <- recoded_consensus_genotypes %>%
     dplyr::group_by(strain, consensus_genotype) %>%
     dplyr::count() %>%
     dplyr::group_by(strain) %>%
     dplyr::count()
   
+  # If there are still discrepancies (i.e. non-N genotypes segregating among samples), return the equivalent of the input data for downstream work
   if(2 %in% still_consensus$n){
     original_consensus <- suppressWarnings(data %>%
                                      dplyr::mutate(marker = mk) %>%
                                      dplyr::distinct(marker, strain, consensus_genotype) %>%
                                      tidyr::pivot_wider(names_from = strain, values_from = consensus_genotype))
-    
-    # sample_new_consensus_calls <- suppressWarnings(recoded_consensus_genotypes %>%
-    #                                                  dplyr::distinct(marker, sample, consensus_genotype) %>% 
-    #                                                  tidyr::pivot_wider(names_from = sample, 
-    #                                                                     values_from = consensus_genotype))
     
     original_sample_calls <- suppressWarnings(data %>%
                                                 dplyr::mutate(marker = mk) %>%
@@ -400,9 +454,9 @@ findConsensusGenotypes <- function(mk, data){
     original_data <- data %>%
       dplyr::mutate(marker = mk,
                     recoded = "")
+    
     return(list(original_consensus, original_sample_calls, original_data))
   } else{
-    
     sample_new_consensus_calls <- recoded_consensus_genotypes %>%
                   dplyr::distinct(marker, sample, consensus_genotype) %>% 
                   tidyr::pivot_wider(names_from = sample, 
@@ -586,21 +640,20 @@ long_XY_intensities <- long_intensities[,c(1,2,3,6)] %>%
   dplyr::filter(chr %in% c("X","Y"))
 
 # Expected output
-# Note: rows 1 and 2 demonstrate duplicate sample names with unique probe intensities (x_int, y_int).
-# marker                       sample x_int y_int chr   bp_mm10 bp_grcm39   cM_cox strand snp
-# XiD1       (129S1/SvImJxA/J)F1f0056 1.161 0.094   X 102827921 101871527 44.17434   plus  TG
-# XiD1       (129S1/SvImJxA/J)F1f0056 1.034 0.054   X 102827921 101871527 44.17434   plus  TG
-# XiD1 (129S1/SvImJxC57BL/6J)F1f15916 0.805 0.068   X 102827921 101871527 44.17434   plus  TG
-# XiD1 (129S1/SvImJxC57BL/6J)F1m15914 0.371 0.035   X 102827921 101871527 44.17434   plus  TG
-# XiD1   (129S1/SvImJxCAST/EiJ)F1f005 0.696 0.040   X 102827921 101871527 44.17434   plus  TG
-# XiD1   (129S1/SvImJxCAST/EiJ)F1m002 0.591 0.041   X 102827921 101871527 44.17434   plus  TG
-# unique unmapped                                            probe strand_flipped
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
-# TRUE    FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# marker                          ample x_int y_int chr   bp_mm10 bp_grcm39   cM_cox strand snp unique
+# XiD1       X.129S1.SvImJxA.J.F1f0056 1.161 0.094   X 102827921 101871527 44.17434   plus  TG   TRUE
+# XiD1     X.129S1.SvImJxA.J.F1f0056.1 1.034 0.054   X 102827921 101871527 44.17434   plus  TG   TRUE
+# XiD1 X.129S1.SvImJxC57BL.6J.F1f15916 0.805 0.068   X 102827921 101871527 44.17434   plus  TG   TRUE
+# XiD1 X.129S1.SvImJxC57BL.6J.F1m15914 0.371 0.035   X 102827921 101871527 44.17434   plus  TG   TRUE
+# XiD1   X.129S1.SvImJxCAST.EiJ.F1f005 0.696 0.040   X 102827921 101871527 44.17434   plus  TG   TRUE
+# XiD1   X.129S1.SvImJxCAST.EiJ.F1m002 0.591 0.041   X 102827921 101871527 44.17434   plus  TG   TRUE
+# unmapped                                            probe strand_flipped
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
+# FALSE CTGCCTTCAAAAGTGCTGGGATTAAAATGATGAGCGAGCAATGCCCAGCC          FALSE
 
 ```
 
@@ -850,7 +903,7 @@ predicted.sex.table <- predicted.sexes.strings %>%
 
 ```
 
-This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone. These samples (below) exhibit a range of naming irregularities.
+This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
 
 ```{r Predicted sex table}
 # Table of samples for which sex could not be predicted from sample name alone. Using one marker is fine as an example as the sample info for each marker is identical.
@@ -1035,8 +1088,16 @@ sample.meta <- reSexed_samples_table %>%
   dplyr::select(sample, bad_sample, inferred.sex, resexed) %>%
   dplyr::left_join(predicted.sexes.strings %>%
                      dplyr::distinct(sample, bg))
+#   sample     bad_sample inferred.sex resexed bg     
+#   <chr>      <chr>      <chr>        <lgl>   <chr>  
+# 1 A.Jf       ""         f            FALSE   unknown
+# 2 A.Jf0374   ""         f            FALSE   unknown
+# 3 A.Jf0374.1 ""         f            FALSE   unknown
+# 4 A.Jf0374.2 ""         f            FALSE   unknown
+# 5 A.Jm0111   ""         m            FALSE   unknown
+# 6 A.Jm0417   ""         m            FALSE   unknown
 
-# From the sample metadata, extract any sample derived from an inbred founder.
+# From the sample metadata, extract any sample derived from an CC/DO founder.
 founder_samples <- sample.meta %>%
   dplyr::mutate(founder = case_when(str_detect(sample, founder_strains[1]) == TRUE ~ "FOUNDER",
                                     str_detect(sample, founder_strains[2]) == TRUE ~ "FOUNDER",
@@ -1048,8 +1109,16 @@ founder_samples <- sample.meta %>%
                                     str_detect(sample, founder_strains[8]) == TRUE ~ "FOUNDER",
                                     TRUE ~ "NOT CC/DO Founder")) %>%
   dplyr::filter(founder == "FOUNDER")
+#   sample     bad_sample inferred.sex resexed bg      founder
+#   <chr>      <chr>      <chr>        <lgl>   <chr>   <chr>  
+# 1 A.Jf       ""         f            FALSE   unknown FOUNDER
+# 2 A.Jf0374   ""         f            FALSE   unknown FOUNDER
+# 3 A.Jf0374.1 ""         f            FALSE   unknown FOUNDER
+# 4 A.Jf0374.2 ""         f            FALSE   unknown FOUNDER
+# 5 A.Jm0111   ""         m            FALSE   unknown FOUNDER
+# 6 A.Jm0417   ""         m            FALSE   unknown FOUNDER
 
-
+# Identify parental strains of founder samples
 founder_dams <- founder_samples %>%
   tidyr::separate(sample, sep = "x", into = c("dam","sire"), remove = F) %>%
   dplyr::mutate(dam = case_when(str_detect(dam, founder_strains[1]) == TRUE ~ founder_strains[1],
@@ -1062,8 +1131,19 @@ founder_dams <- founder_samples %>%
                                 str_detect(dam, founder_strains[8]) == TRUE ~ founder_strains[8],
                                 TRUE ~ "NOT CC/DO Founder")) %>%
   dplyr::filter(dam != "NOT CC/DO Founder")
+#   sample     dam   sire  bad_sample inferred.sex resexed bg      founder
+#   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>   <chr>  
+# 1 A.Jf       A.J   NA    ""         f            FALSE   unknown FOUNDER
+# 2 A.Jf0374   A.J   NA    ""         f            FALSE   unknown FOUNDER
+# 3 A.Jf0374.1 A.J   NA    ""         f            FALSE   unknown FOUNDER
+# 4 A.Jf0374.2 A.J   NA    ""         f            FALSE   unknown FOUNDER
+# 5 A.Jm0111   A.J   NA    ""         m            FALSE   unknown FOUNDER
+# 6 A.Jm0417   A.J   NA    ""         m            FALSE   unknown FOUNDER
 
+
+# Characterize the type of founder sample
 all_founder_samples <- founder_dams %>%
+  # Need to eliminate certain samples manually because a founder strain name was close to the sample name by chance
   dplyr::mutate(weird.founder = case_when(str_detect(sample, "KOMP") == TRUE ~ "FLAG",
                                           str_detect(sample, "CBA") == TRUE ~ "FLAG",
                                           str_detect(sample, "AEJ") == TRUE ~ "FLAG",
@@ -1081,6 +1161,15 @@ all_founder_samples <- founder_dams %>%
                                 TRUE ~ ""),
                 sire = if_else(sire == "", true = dam, false = sire),
                 bg = if_else(dam == sire, "INBRED", "CROSS"))
+#   sample     dam   sire  bad_sample inferred.sex resexed bg     founder weird.founder
+#   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>  <chr>   <chr>        
+# 1 A.Jf       A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# 2 A.Jf0374   A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# 3 A.Jf0374.1 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# 4 A.Jf0374.2 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# 5 A.Jm0111   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""           
+# 6 A.Jm0417   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""  
+
 
 
 # Count up samples for each founder and resulting cross and display a table
@@ -1132,9 +1221,9 @@ plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
 
 ```
 
-From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. The genotypes for intersecting markers between two strains were combined "crossed" to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction.
+From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. 
 
-```{r founder background QC, fig.width=7, fig.height=4}
+```{r generate founder consensus calls}
 
 # Loop creates a data frame of consensus genotype calls for each CC/DO founder strain
 # In this case, "consensus" is designated by all samples of the same strain having identical genotype calls for the same marker
@@ -1146,7 +1235,7 @@ for(f in founder_strains){
   
   print(paste("Generating Calls for",f))
   
-  # Pulling the samples for each CC/DO founder strain
+  # Pulling the samples and genotypes for each CC/DO founder strain
   founder.geno.array <- all_founder_samples %>%
     dplyr::filter(dam == f,
                   sire == f) %>%
@@ -1161,43 +1250,51 @@ for(f in founder_strains){
     dplyr::group_by(marker, genotype) %>%
     dplyr::count()
   
-
-  
+  # Collect markers which have identical genotypes across samples from the same founder
   complete_founder_genos <- founder.allele.counts %>%
     dplyr::filter(n == max(founder.allele.counts$n)) %>%
     dplyr::select(-n) %>%
     `colnames<-`(c("marker",f))
 
+  # Collect markers where there is some disagreement
   incomplete_founder_genos <- founder.allele.counts %>%
     dplyr::filter(n != max(founder.allele.counts$n)) %>%
     dplyr::select(-n) %>%
     `colnames<-`(c("marker",f))
 
+  # Filter sample genotypes to markers with genotype disagreement
   incomplete_founder_genos_samples <- founder.geno.array %>%
     dplyr::filter(marker %in% unique(incomplete_founder_genos$marker)) %>%
-    dplyr::select(sample, genotype, marker)
+    dplyr::select(sample, genotype, marker) %>% 
+    dplyr::arrange(marker)
 
+  # Join intensities to discordant genotyped samples
   incomplete_founder_genos_ints_samples <- long_intensities[,c(1,2,3,6)] %>%
     dplyr::right_join(.,incomplete_founder_genos_samples) %>%
     dplyr::left_join(., mm_metadata %>% dplyr::select(marker, chr))
 
+  # Create nested list by marker of sample genotypes and respective intensities to be able to eliminate certain genotypes off the bat based on outlier intensity values *within* a founder background
   incomplete_founder_genos_ints_samples_nested <- incomplete_founder_genos_ints_samples %>%
     dplyr::group_by(marker) %>%
     tidyr::nest()
   
+  # Remove samples with extreme intensity values to try to create better consensus for the founder strain
   incomplete_founder_consensus <- purrr::pmap(.l = list(incomplete_founder_genos_ints_samples_nested$marker,
                                                         incomplete_founder_genos_ints_samples_nested$data,
                                                         rep(f, length(incomplete_founder_genos_ints_samples_nested$data))),
                                               .f = removeExtremeInts) %>%
     Reduce(rbind,.)
 
+  # Identify markers where there is now 1 genotype across samples after removing extreme intensities
   recaptured_tally <- incomplete_founder_consensus %>%
     dplyr::group_by(marker) %>%
     dplyr::count() %>%
     dplyr::filter(n == 1)
 
+  # Re-attach these re-inferred genotype calls to the consensus that already exists
   founder_genos <- complete_founder_genos %>%
-    dplyr::bind_rows(.,incomplete_founder_consensus %>% dplyr::filter(marker %in% recaptured_tally$marker))
+    dplyr::bind_rows(.,incomplete_founder_consensus %>% 
+                       dplyr::filter(marker %in% recaptured_tally$marker))
 
   # Assign these calls to a founder object
   assign(paste0("Calls_",f), founder_genos)
@@ -1205,50 +1302,61 @@ for(f in founder_strains){
 }
 ```
 
-```{r consensus building}
+The genotypes for intersecting markers between two strains were combined ("crossed") to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction.
 
-# Founder consensus genotypes for good markers
+```{r determine founder strains with missing consensus calls}
+
+# Build a list of founder consensus genotypes for good markers
 founder_consensus_calls <- list(Calls_A.J, Calls_C57BL.6J, Calls_129S1.SvImJ, Calls_NOD.ShiLtJ,
                                 Calls_NZO.HILtJ, Calls_CAST.EiJ, Calls_PWK.PhJ, Calls_WSB.EiJ)
 
+# Generate a data frame with good markers as the sole column
 good_markers <- genos.flagged %>%
   dplyr::distinct(marker, marker_flag) %>%
   dplyr::filter(marker_flag != "FLAG")
 
-filtered_consensus_calls <- purrr::map(founder_consensus_calls, function(x){x %>% dplyr::filter(marker %in% good_markers$marker)}) %>%
+# Loop through the exisitng consensus calls and filter down to good markers
+filtered_consensus_calls <- purrr::map(founder_consensus_calls, 
+                                       function(x){
+                                         x %>% 
+                                           dplyr::filter(marker %in% good_markers$marker)
+                                         }) %>%
   Reduce(full_join, .)
+# Replace "." in strain names with "/"
 colnames(filtered_consensus_calls)[-1] <- gsub(colnames(filtered_consensus_calls)[-1], pattern = "[.]", replacement = "/")
 
-# founder_strains_2 <- gsub(founder_strains, pattern = "[.]", replacement =  "/")
 
-
+# Filter samples down to inbred strains and attach a proper strain name column
 founder_sample_metadata <- all_founder_samples %>%
   dplyr::mutate(strain = if_else(dam == sire, true = dam, false = "CROSS")) %>% 
   dplyr::filter(bg == "INBRED", 
                 strain %in% founder_strains) %>%
   dplyr::mutate(strain = gsub(strain,pattern = "[.]", replacement = "/"))
+#   sample     dam   sire  bad_sample inferred.sex resexed bg     founder weird.founder strain
+#   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>  <chr>   <chr>         <chr> 
+# 1 A.Jf       A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""            A/J   
+# 2 A.Jf0374   A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""            A/J   
+# 3 A.Jf0374.1 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""            A/J   
+# 4 A.Jf0374.2 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""            A/J   
+# 5 A.Jm0111   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""            A/J   
+# 6 A.Jm0417   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""            A/J 
 
+
+# Create column index for intensity data tables
 founder_samples_for_ints <- c("marker",founder_sample_metadata$sample)
-
 founder_x_int <- x_intensities[marker %in% good_markers$marker,..founder_samples_for_ints] %>%
   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "x_int") %>%
   dplyr::left_join(., founder_sample_metadata, by = "sample")
-
 founder_y_int <- y_intensities[marker %in% good_markers$marker,..founder_samples_for_ints] %>%
   tidyr::pivot_longer(-marker, names_to = "sample", values_to = "y_int") %>%
   dplyr::left_join(., founder_sample_metadata, by = "sample")
 
-
+# Identify consensus calls that have complete data across founders
 founder_consensus_complete <- filtered_consensus_calls[complete.cases(filtered_consensus_calls),]
+# Identify consensus calls that have DO NOT have complete data across founders (i.e. maybe some sort of discrepancy among samples contributing to that founder)
 founder_consensus_incomplete <- filtered_consensus_calls[!complete.cases(filtered_consensus_calls),]
 
-# Founder consensus calls with some missing
-# missing_consensus_calls_nested <- founder_consensus_incomplete %>%
-#   tidyr::pivot_longer(-marker, names_to = "strain", values_to = "genotype") %>%
-#   dplyr::arrange(marker) %>%
-#   dplyr::group_by(marker) %>%
-#   tidyr::nest()
-
+# Attach intensity data to sample genotypes and nest the data for QCing in next step
 missing_consensus_calls_nested <- founder_consensus_incomplete %>%
   tidyr::pivot_longer(-marker, names_to = "strain", values_to = "genotype") %>%
   dplyr::full_join(., founder_x_int %>%
@@ -1269,8 +1377,10 @@ missing_consensus_calls_nested <- founder_consensus_incomplete %>%
 
 ```
 
-```{r}
+In order to generate a consensus call for each CC/DO founder, we had to determine whether individual samples for a given founder were correctly typed and, if the marker failed, eliminate it so that consensus could be formed. Below is an example of what that might look like for an individual marker. Note how when at least one sample for a given strain is not assigned one of the two expected alleles, the consensus is an "NA".
 
+```{r}
+# Sample a marker at random
 m <- sample(seq(1:length(missing_consensus_calls_nested$marker)), size = 1)
 sample_genotypes_plot <- ggplot() +
   geom_point(data = missing_consensus_calls_nested$data[[m]], mapping = aes(x = x_int,
@@ -1279,7 +1389,7 @@ sample_genotypes_plot <- ggplot() +
                                              label = sample)) +
   scale_colour_manual(values = brewer.pal(4,"Set2")) +
   QCtheme + 
-  ggtitle(missing_consensus_calls_nested$marker[[m]])
+  ggtitle(paste0("Sample genotypes for marker", missing_consensus_calls_nested$marker[[m]]))
 
 consensus_genotypes_plot <- ggplot() +
   geom_point(data = missing_consensus_calls_nested$data[[m]], mapping = aes(x = x_int,
@@ -1288,12 +1398,14 @@ consensus_genotypes_plot <- ggplot() +
                                              label = sample)) +
   scale_colour_manual(values = brewer.pal(4,"Set1")) +
   QCtheme + 
-  ggtitle(missing_consensus_calls_nested$marker[[m]])
+  ggtitle(paste0("Resulting consensus genotypes for marker ", missing_consensus_calls_nested$marker[[m]]))
 
 
 ggplotly(sample_genotypes_plot)
 ggplotly(consensus_genotypes_plot)
 ```
+
+We observed `r length(missing_consensus_calls_nested$marker)` markers. For each one, we used the intensity data to identify problematic founder samples, eliminate them, and then use good founder samples to re-classify missing consensus genotypes for strains where they were missing before. Below is the expected output of that process.
 
 ```{r visual of consensus reassignment}
 example_output <- findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[m]], 
@@ -1307,29 +1419,29 @@ recoded_consensus_genotypes_plot <- ggplot() +
   scale_fill_manual(values = c("black","white")) +
   scale_colour_manual(values = brewer.pal(4,"Set1")) +
   QCtheme + 
-  ggtitle(missing_consensus_calls_nested$marker[[m]])
+  ggtitle(paste0("Re-coded consensus genotypes for marker", missing_consensus_calls_nested$marker[[m]]))
 ggplotly(recoded_consensus_genotypes_plot)
 
 ```
 
-```{r}
-# findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[322]],data = missing_consensus_calls_nested$data[[322]])
+```{r re-assign consensus genotypes}
+# Loop through markers where at least one strain lacked a consensus call and re-assign using other founder sample genotype data
 founder_consensus_incomplete_recoded <- suppressWarnings(furrr::future_map2(missing_consensus_calls_nested$marker,
                                                                             missing_consensus_calls_nested$data,
                                                                             findConsensusGenotypes))
 founder_consensus_incomplete_recoded_tr <- purrr::transpose(founder_consensus_incomplete_recoded)
-
-
 new_consensus_founders <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
 updated_founder_sample_genotypes <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[2]])
 
+# Update original consensus calls with re-assigned consensus calls
 clean_founder_consensus_genotypes <- founder_consensus_complete %>%
   dplyr::bind_rows(.,new_consensus_founders)
+
 ```
 
-By using probe intensities and replicate samples among founder strains to re-evaluate consensus genotype calls, we recovered genotypes for `r nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100`% of those for which consensus genotypes were previously missing.
+By using probe intensities and replicate samples among founder strains to re-evaluate consensus genotype calls, we recovered genotypes for `r nrow(new_consensus_founders[complete.cases(new_consensus_founders),])/length(missing_consensus_calls_nested$marker)*100`% of those for which consensus genotypes were previously missing. Finally, we quantified the concordance between all founder sample genotypes (including samples from crosses between founders) and those predicted based on the updated consensus genotype calls.
 
-```{r}
+```{r fig.width=10, fig.height=5}
 # Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
 founder_strains_2 <- gsub(founder_strains, pattern = "[.]", replacement =  "/")
 for(f in founder_strains_2){
@@ -1344,7 +1456,7 @@ for(f in founder_strains_2){
 dams <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
   `colnames<-`(c("dams","sires")) %>%
   # Select crosses between strains
-  filter(dams != sires) %>%
+  # filter(dams != sires) %>%
   dplyr::select(dams) %>%
   as.list()
 # Loop through the list of cross types and pull in genotype call objects
@@ -1356,7 +1468,7 @@ for(i in 1:length(dams$dams)){
 # Do the same for the sires for each F1
 sires <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
   `colnames<-`(c("dams","sires")) %>%
-  filter(dams != sires) %>%
+  # filter(dams != sires) %>%
   dplyr::select(sires) %>%
   as.list()
 sire_calls <- list()
@@ -1364,15 +1476,14 @@ for(i in 1:length(sires$sires)){
   sire_calls[[i]] <- get(ls(pattern = paste0("Clean_Calls_",sires$sires[i])))
 }
 
-# Compare the predicted F1 genotypes to the genotypes of each F1 sample
-### FIX 129S1 strain referencing in updated founder_background_QC function
+# Compare the predicted genotypes (from consensus calls) to the actual genotypes of each sample
 # founder_background_QC(dam = dam_calls[[6]], sire = sire_calls[[6]])
 bg_QC <- purrr::map2(dam_calls, sire_calls, founder_background_QC)
 
 # Keep outputs from the QC that are lists; if QC wasn't performed for a given background, the output was a character vector warning
 founder_background_QC_tr <- bg_QC %>%
   purrr::keep(., is.list) %>%
-  # Instead of having 56 elements of lists of two, have two lists of 56:
+  # Instead of having 64 elements of lists of two, have two lists of 64:
   # 1) All good genotypes from each cross with concordance values
   # 2) All concordance summaries for each cross
   purrr::transpose(.)
@@ -1384,24 +1495,22 @@ founder_concordance_df <- Reduce(rbind, founder_background_QC_tr[[2]])
 founder_concordance_df[is.na(founder_concordance_df)] <- 0
 # Form concordance as a percentage
 founder_concordance_df_2 <- founder_concordance_df %>%
-  dplyr::mutate(concordance = MATCH/(MATCH + `NO MATCH`))
+  dplyr::mutate(concordance = MATCH/(MATCH + `NO MATCH`)) %>%
+  dplyr::mutate(dam = gsub(dam, pattern = "[.]", replacement = "/"),
+                sire = gsub(sire, pattern = "[.]", replacement = "/"))
 founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
                                            levels = c("Autosome","X","Y","M","Other"))
-
-# Interactive plot of the genotype concordance for each sample across chromosome types
-founderQCplot <- ggplot(data = founder_concordance_df_2, mapping = aes(x = sample, 
-                                                                       y = concordance,
-                                                                       colour = sire,
-                                                                       fill = dam)) + 
-  geom_point(shape = 21, size = 4) + 
-  scale_colour_manual(values = founder_palette) + 
-  scale_fill_manual(values = founder_palette) +
-  facet_grid(alt_chr~inferred.sex) +  
-  QCtheme + 
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
-
-ggplotly(founderQCplot)
+founder_concordance_df_3 <- founder_concordance_df_2 %>%
+  dplyr::filter(alt_chr == "Autosome")
+concordance_plot <- ggplot(founder_concordance_df_3, mapping = aes(x = dam, y = concordance, color = dam, fill = sire)) + 
+  geom_jitter(shape = 21, width = 0.10) +
+  scale_fill_manual(values = founder_palette_2) +
+  scale_colour_manual(values = founder_palette_2) +
+  ylim(c(0.5,1.05)) + 
+  labs(x = "Dam Founder Strain",
+       y = "Autosomal Genotype Concordance") + 
+  QCtheme
+ggplotly(concordance_plot)
 ```
 
 ## Writing reference files
@@ -1421,31 +1530,14 @@ Each file type is generated for:
 -   Eight CC/DO founder strains
 
 ```{r summarize marker and samples, echo=FALSE}
-# Collect founder QC genotypes from evaluation list
-founder_sample_genos_QCdf <- founder_background_QC_tr[[1]] %>%
-  Reduce(rbind,.)
-
 # Categorize genotypes based on flags and consensus status
 marker_categories <- genos.flagged %>%
   dplyr::select(marker, marker_flag) %>%
-  dplyr::distinct() %>%
-  dplyr::mutate(passing_founder_QC = if_else(marker %in% unique(founder_sample_genos_QCdf$marker), 
-                                            true = "Yes", 
-                                            false = "No"),
-                marker_flag = if_else(marker_flag == "FLAG",true = "Yes",false = "No"))
-
-# Print a summary table of how markers set is reduced for all files
-marker_categories %>%
-  dplyr::group_by(marker_flag, passing_founder_QC) %>%
-  dplyr::count() %>%
-  dplyr::arrange(-n) %>%
-  `colnames<-`(c("High N Calls?","Passing Founder QC?","n")) %>%
-  DT::datatable(.)
+  dplyr::distinct()
 
 # Filter down to good markers for all samples
 good_markers <- marker_categories %>%
-  dplyr::filter(marker_flag == "No",
-                passing_founder_QC == "Yes")
+  dplyr::filter(marker_flag == "")
 
 # Filter down to good samples
 bad_samples <- high.n.samples %>%
@@ -1469,14 +1561,54 @@ In total, `r nrow(good_markers)` markers and `r length(good_samples)-1` samples 
 
 # Generate genotype files for all good samples and all good markers
 reference_genos_all_samples <- control_genotypes[marker %in% good_markers$marker,..good_samples]
+
+founder_sample_names <- c("marker",unique(founder_concordance_df_3$sample))
+
+reference_genos_founder_samples <- reference_genos_all_samples[,..founder_sample_names]
+reference_genos_founder_samples_complete <- reference_genos_founder_samples[!marker %in% updated_founder_sample_genotypes$marker,]
+reference_genos_founder_samples_updated <- reference_genos_founder_samples_complete %>%
+  dplyr::bind_rows(., updated_founder_sample_genotypes[which(updated_founder_sample_genotypes$marker %in% reference_genos_founder_samples$marker),])
+nonfounder_samples <- c("marker",colnames(reference_genos_all_samples)[!colnames(reference_genos_all_samples) %in% founder_sample_names])
+reference_genos_nonfounder_samples <- reference_genos_all_samples[,..nonfounder_samples]
+pre_final_reference_genos <- reference_genos_nonfounder_samples %>%
+  dplyr::full_join(., reference_genos_founder_samples_updated)
+
+final_reference_genos <- pre_final_reference_genos[, lapply(.SD, function(x) replace(x, which(is.na(x)), "N"))]
+reference_genos_founders_final <- final_reference_genos[,..founder_sample_names]
+
+
+# Intensities
 reference_xints_all_samples <- x_intensities[marker %in% good_markers$marker,..good_samples]
 reference_yints_all_samples <- y_intensities[marker %in% good_markers$marker,..good_samples]
+
+founder_mean_x_ints <- founder_x_int %>%
+  dplyr::left_join(.,mm_metadata %>%
+                     dplyr::select(marker, chr), by = "marker") %>%
+  dplyr::select(marker, chr, sample, strain, inferred.sex, x_int) %>%
+  dplyr::group_by(marker, strain) %>%
+  dplyr::summarise(x_int = mean(x_int)) %>%
+  tidyr::pivot_wider(names_from = strain, values_from = x_int) %>%
+  dplyr::filter(marker %in% good_markers$marker)
+
+founder_mean_y_ints <- founder_y_int %>%
+  dplyr::left_join(.,mm_metadata %>%
+                     dplyr::select(marker, chr), by = "marker") %>%
+  dplyr::select(marker, chr, sample, strain, inferred.sex, y_int) %>%
+  dplyr::group_by(marker, strain) %>%
+  dplyr::summarise(y_int = mean(y_int)) %>%
+  tidyr::pivot_wider(names_from = strain, values_from = y_int)%>%
+  dplyr::filter(marker %in% good_markers$marker)
+
+final_founder_consensus_genotypes <- clean_founder_consensus_genotypes %>%
+  dplyr::filter(marker %in% good_markers$marker)
+final_founder_consensus_genotypes[is.na(final_founder_consensus_genotypes)] <- "N"
 
 # All sample metadata
 pre_metadata <- sample.meta %>%
   dplyr::select(sample, inferred.sex, resexed) %>%
   dplyr::mutate(bad_sample = if_else(sample %in% bad_samples, true = "BAD SAMPLE", false = "")) %>%
   dplyr::rename(sex = inferred.sex)
+
 strain_assignment <- all_founder_samples %>%
   dplyr::ungroup() %>%
   dplyr::distinct(sample, dam, sire) %>%
@@ -1509,8 +1641,7 @@ remaining_nonfounder_samples <- unassigned_strains %>%
                                         false = strain),
                 strain = dplyr::if_else(str_detect(strain, "F1") == TRUE, 
                                         true = paste0("(",gsub(strain, pattern = ".F1", replacement = ")F1")), 
-                                        false = strain)) %>%
-  dplyr::select(-resexed)
+                                        false = strain))
 reference_sample_metadata <- strain_assignment %>%
   dplyr::filter(!is.na(strain)) %>%
   dplyr::bind_rows(.,remaining_nonfounder_samples) %>%
@@ -1525,6 +1656,29 @@ reference_sample_metadata <- strain_assignment %>%
                                           strain == "Nestin/////Cre/" ~ "Nestin -/- Cre+",
                                           TRUE ~ strain))
 
+founder_sample_metadata_conc <- founder_concordance_df_3 %>%
+  dplyr::left_join(., reference_sample_metadata) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(sample, strain, sex, dam, sire, concordance) %>%
+  dplyr::mutate(dam = case_when(dam == "A/J" ~ "A",
+                                dam == "C57BL/6J" ~ "B",
+                                dam == "129S1/SvImJ" ~ "C",
+                                dam == "NOD/ShiLtJ" ~ "D",
+                                dam == "NZO/HILtJ" ~ "E",
+                                dam == "CAST/EiJ" ~ "F",
+                                dam == "PWK/PhJ" ~ "G",
+                                dam == "WSB/EiJ" ~ "H"),
+                sire = case_when(sire == "A/J" ~ "A",
+                                sire == "C57BL/6J" ~ "B",
+                                sire == "129S1/SvImJ" ~ "C",
+                                sire == "NOD/ShiLtJ" ~ "D",
+                                sire == "NZO/HILtJ" ~ "E",
+                                sire == "CAST/EiJ" ~ "F",
+                                sire == "PWK/PhJ" ~ "G",
+                                sire == "WSB/EiJ" ~ "H")) %>%
+  tidyr::unite("letter", dam:sire, sep = "")
+
+
 
 dir.create("../output", showWarnings = F)
 dir.create("../output/MegaMUGA", showWarnings = F)
@@ -1532,4 +1686,8 @@ write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genot
 write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
 write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
 write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
+write.csv(final_founder_consensus_genotypes, file = "../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
+write.csv(founder_mean_x_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
+write.csv(founder_mean_y_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
+write.csv(founder_sample_metadata_conc, file = "../output/MegaMUGA/MegaMUGA_founder_metadata.csv")
 ```
