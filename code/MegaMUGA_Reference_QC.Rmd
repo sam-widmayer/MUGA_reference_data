@@ -1560,7 +1560,7 @@ good_samples <- colnames(control_genotypes)[!colnames(control_genotypes) %in% ba
 
 In total, `r nrow(good_markers)` markers and `r length(good_samples)-1` samples passed the QC steps we imposed, and wrote these genotype data and metadata to new reference files.
 
-```{r output files for all samples, eval=FALSE, include=FALSE}
+```{r output files for all samples}
 
 # Generate genotype files for all good samples and all good markers
 reference_genos_all_samples <- control_genotypes[marker %in% good_markers$marker,..good_samples]
