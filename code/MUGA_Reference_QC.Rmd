@@ -719,87 +719,13 @@ predicted.sex.table <- prelim.predicted.sexes %>%
   dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
   dplyr::select(sample, predicted.sex) %>%
   dplyr::group_by(predicted.sex) %>%
-  dplyr::count() 
+  dplyr::count()
 
 ```
 
 This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
 
 After predicting the sexes of the majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information. In many cases, pulling substrings of sample names as the sex of the sample was too sensitive and misclassified samples.
-
-```{r Predicted sex visualization}
-
-# Input: Sex chromosome probe intensities for each marker with 1) marker metdata, 2) marker and sample flags, 3) background and sex predictions
-
-Xchr.int <- prelim.predicted.sexes %>%
-  dplyr::ungroup() %>%
-  dplyr::filter(marker_flag != "FLAG",
-                Chromosome == "X") %>%
-  dplyr::mutate(x.chr.int = X + Y,
-                theta = as.numeric(theta)) %>%
-  dplyr::group_by(sample, predicted.sex) %>%
-  dplyr::summarise(mean.x.chr.int = mean(x.chr.int),
-                   mean.x = mean(X),
-                   mean.theta = mean(theta))
-# Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
-
-#   sample        predicted.sex mean.x.chr.int
-#   <chr>         <chr>                  <dbl>
-# 1 #1-m-9376 (m) m                       1.10
-# 2 #2-m-9376 (m) m                       1.07
-# 3 #3-m-9376 (m) m                       1.10
-# 4 #4-m-9376 (m) m                       1.13
-# 5 #5-m-9376 (m) m                       1.12
-# 6 #6-m-9376 (m) m                       1.11
-
-
-Ychr.int <- prelim.predicted.sexes %>%
-  dplyr::ungroup() %>%
-  dplyr::mutate(theta = as.numeric(theta)) %>%
-  dplyr::filter(marker_flag != "FLAG",
-                Chromosome == "Y") %>%
-  dplyr::group_by(sample, predicted.sex) %>%
-  dplyr::summarise(mean.y.int = mean(Y),
-                   mean.theta = mean(theta))
-# Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
-
-#   sample        predicted.sex mean.y.int
-#   <chr>         <chr>              <dbl>
-# 1 #1-m-9376 (m) m                  0.826
-# 2 #2-m-9376 (m) m                  0.804
-# 3 #3-m-9376 (m) m                  0.729
-# 4 #4-m-9376 (m) m                  0.804
-# 5 #5-m-9376 (m) m                  0.826
-# 6 #6-m-9376 (m) m                  0.733
-
-
-# Column binding the two intensities if the sample information matches
-if(unique(Xchr.int$sample == Ychr.int$sample) == TRUE){
-  sex.chr.intensities <- cbind(Xchr.int,Ychr.int$mean.y.int)
-  colnames(sex.chr.intensities) <- c("sample","predicted.sex","sumxy_int","x_int","mean_theta","y_int")
-}
-
-# Interactive visualization of sex prediction results. Sample are colored according to predicted sex. "Unknown" samples are plotted black, and flagged/bad samples are triangles.
-predicted.sex.plot.palettes <- sex.chr.intensities %>%
-  dplyr::ungroup() %>%
-  dplyr::distinct(sample, predicted.sex) %>%
-  dplyr::mutate(predicted.sex.palette = dplyr::case_when(predicted.sex == "f" ~ "#5856b7",
-                                                         predicted.sex == "m" ~ "#eeb868",
-                                                         predicted.sex == "unknown" ~ "black"))
-predicted.sex.palette <- predicted.sex.plot.palettes$predicted.sex.palette
-names(predicted.sex.palette) <- predicted.sex.plot.palettes$predicted.sex
-mean.x.intensities.by.sex.plot <- ggplot(sex.chr.intensities, 
-                                         mapping = aes(x = sumxy_int, 
-                                                       y = y_int, 
-                                                       colour = predicted.sex,
-                                                       text = sample)) + 
-  geom_point() + 
-  scale_colour_manual(values = predicted.sex.palette) + 
-  # facet_grid(.~chr) +
-  QCtheme
-ggplotly(mean.x.intensities.by.sex.plot, 
-         tooltip = c("text","label"))
-```
 
 
 ```{r kmeans clustering, eval=FALSE, include=FALSE}
@@ -1056,17 +982,110 @@ hc <- hclust(dd, method = "ward.D2")
 ndendcolors <- 5
 dend_colors = c(brewer.pal(ndendcolors,"Paired")) 
 clus8 = cutree(hc, ndendcolors)
-plot(as.phylo(hc), type = "f", cex = 0.7, tip.color = dend_colors[clus8],
+plot(as.phylo(hc), type = "f", cex = 0.9, tip.color = dend_colors[clus8],
      no.margin = T, label.offset = 1, edge.width = 0.5)
 
 ```
 
 From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. 
 
-```{r generate founder consensus calls}
+```{r}
 
 # Loop creates a data frame of consensus genotype calls for each CC/DO founder strain
 # In this case, "consensus" is designated by all samples of the same strain having identical genotype calls for the same marker
+XY_hetrate <- long_XY_intensities %>%
+  # dplyr::right_join(., prelim.predicted.sexes, by = "sample") %>%
+  dplyr::mutate(het = if_else(genotype == "H", "HET","NO_HET")) %>%
+  dplyr::select(sample, marker, Chromosome, genotype, het) %>%
+  dplyr::right_join(., prelim.predicted.sexes %>%
+                      dplyr::select(sample, predicted.sex)) %>%
+  dplyr::group_by(predicted.sex, Chromosome, het, sample) %>%
+  dplyr::count() %>%
+  tidyr::pivot_wider(names_from = het, values_from = n) %>%
+  dplyr::mutate(het_rate = HET/(HET+NO_HET)) %>%
+  dplyr::left_join(., final_founder_samples)
+XY_hetrate_plot <- ggplot(XY_hetrate, mapping = aes(x = predicted.sex, y = het_rate, fill = bg, label = sample)) + 
+  geom_jitter(shape = 21, width = 0.1) + 
+  facet_grid(.~Chromosome)
+ggplotly(XY_hetrate_plot)
+```
+
+```{r Predicted sex visualization, eval=FALSE, include=FALSE}
+
+# Input: Sex chromosome probe intensities for each marker with 1) marker metdata, 2) marker and sample flags, 3) background and sex predictions
+Xchr.int <- prelim.predicted.sexes %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(marker_flag != "FLAG",
+                Chromosome == "X") %>%
+  dplyr::mutate(x.chr.int = X + Y,
+                theta = as.numeric(theta)) %>%
+  dplyr::group_by(sample, predicted.sex) %>%
+  dplyr::summarise(mean.x.chr.int = mean(x.chr.int),
+                   mean.x = mean(X),
+                   mean.theta = mean(theta))
+# Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
+
+#   sample        predicted.sex mean.x.chr.int
+#   <chr>         <chr>                  <dbl>
+# 1 #1-m-9376 (m) m                       1.10
+# 2 #2-m-9376 (m) m                       1.07
+# 3 #3-m-9376 (m) m                       1.10
+# 4 #4-m-9376 (m) m                       1.13
+# 5 #5-m-9376 (m) m                       1.12
+# 6 #6-m-9376 (m) m                       1.11
+
+
+Ychr.int <- prelim.predicted.sexes %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(theta = as.numeric(theta)) %>%
+  dplyr::filter(marker_flag != "FLAG",
+                Chromosome == "Y") %>%
+  dplyr::group_by(sample, predicted.sex) %>%
+  dplyr::summarise(mean.y.int = mean(Y),
+                   mean.theta = mean(theta))
+# Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
+
+#   sample        predicted.sex mean.y.int
+#   <chr>         <chr>              <dbl>
+# 1 #1-m-9376 (m) m                  0.826
+# 2 #2-m-9376 (m) m                  0.804
+# 3 #3-m-9376 (m) m                  0.729
+# 4 #4-m-9376 (m) m                  0.804
+# 5 #5-m-9376 (m) m                  0.826
+# 6 #6-m-9376 (m) m                  0.733
+
+
+# Column binding the two intensities if the sample information matches
+if(unique(Xchr.int$sample == Ychr.int$sample) == TRUE){
+  sex.chr.intensities <- cbind(Xchr.int,Ychr.int$mean.y.int)
+  colnames(sex.chr.intensities) <- c("sample","predicted.sex","sumxy_int","x_int","mean_theta","y_int")
+}
+
+# Interactive visualization of sex prediction results. Sample are colored according to predicted sex. "Unknown" samples are plotted black, and flagged/bad samples are triangles.
+predicted.sex.plot.palettes <- sex.chr.intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct(sample, predicted.sex) %>%
+  dplyr::mutate(predicted.sex.palette = dplyr::case_when(predicted.sex == "f" ~ "#5856b7",
+                                                         predicted.sex == "m" ~ "#eeb868",
+                                                         predicted.sex == "unknown" ~ "black"))
+predicted.sex.palette <- predicted.sex.plot.palettes$predicted.sex.palette
+names(predicted.sex.palette) <- predicted.sex.plot.palettes$predicted.sex
+mean.x.intensities.by.sex.plot <- ggplot(sex.chr.intensities, 
+                                         mapping = aes(x = sumxy_int, 
+                                                       y = y_int, 
+                                                       colour = predicted.sex,
+                                                       text = sample)) + 
+  geom_point() + 
+  scale_colour_manual(values = predicted.sex.palette) + 
+  # facet_grid(.~chr) +
+  QCtheme
+ggplotly(mean.x.intensities.by.sex.plot, 
+         tooltip = c("text","label"))
+```
+
+```{r generate founder consensus calls}
+
+
 for(f in strict_founder_strains){
   
   print(paste("Generating Calls for",f))
@@ -1257,7 +1276,7 @@ founder_consensus_incomplete_recoded <- suppressWarnings(furrr::future_map2(miss
                                                                             missing_consensus_calls_nested$data,
                                                                             findConsensusGenotypes))
 founder_consensus_incomplete_recoded_tr <- purrr::transpose(founder_consensus_incomplete_recoded)
-new_consensus_founders <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
+new_consensus_founders <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[1]][146])
 updated_founder_sample_genotypes <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[2]])
 
 # Update original consensus calls with re-assigned consensus calls
