@@ -1,5 +1,5 @@
 ---
-title: "Reference Data QC: MegaMUGA"
+title: "Reference Data QC: MUGA"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -8,11 +8,16 @@ output:
     code_folding: hide
 ---
 
-# MegaMUGA Annotations
+# MUGA Annotations
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
-library(tidyverse)
+# library(tidyverse)
+# ^ this if running locally
+require(dplyr)
+require(tidyr)
+require(stringr)
+# ^ these if running on sumner
 library(data.table)
 library(purrr)
 library(furrr)
@@ -1091,7 +1096,7 @@ hc <- hclust(dd, method = "ward.D2")
 ndendcolors <- 3
 dend_colors = c(brewer.pal(ndendcolors,"Paired")) 
 clus8 = cutree(hc, ndendcolors)
-plot(as.phylo(hc), type = "f", cex = 1.3, tip.color = dend_colors[clus8],
+plot(as.phylo(hc), type = "f", cex = 0.8, tip.color = dend_colors[clus8],
      no.margin = T, label.offset = 1, edge.width = 0.5)
 
 ```
@@ -1197,7 +1202,7 @@ founder_intensities <- founder_sample_metadata %>%
 
 
 # First form a list of dams that comprise each F1 cross type
-dams <- data.frame(tidyr::expand_grid(strict_founder_strains, strict_founder_strains)) %>%
+dams <- data.frame(tidyr::expand_grid(strict_founder_strains, strict_founder_strains, .name_repair = "minimal")) %>%
   `colnames<-`(c("dams","sires")) %>%
   # Select crosses between strains
   # filter(dams != sires) %>%
@@ -1210,7 +1215,7 @@ for(i in 1:length(dams$dams)){
 }
 
 # Do the same for the sires
-sires <- data.frame(tidyr::expand_grid(strict_founder_strains, strict_founder_strains)) %>%
+sires <- data.frame(tidyr::expand_grid(strict_founder_strains, strict_founder_strains, .name_repair = "minimal")) %>%
   `colnames<-`(c("dams","sires")) %>%
   # filter(dams != sires) %>%
   dplyr::select(sires) %>%
@@ -1246,10 +1251,14 @@ founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
                                            levels = c("Autosome","X","Y","M","Other"))
 founder_concordance_df_3 <- founder_concordance_df_2 %>%
   dplyr::filter(alt_chr == "Autosome")
+founder_palette <- qtl2::CCcolors
+names(founder_palette) <- strict_founder_strains[c(2,3,1,5,6,4,7,8)]
+founder_palette_2 <- founder_palette
+
 concordance_plot <- ggplot(founder_concordance_df_3, mapping = aes(x = dam, y = concordance, color = dam, fill = sire)) + 
   geom_jitter(shape = 21, width = 0.25) +
-  # scale_fill_manual(values = founder_palette_2) +
-  # scale_colour_manual(values = founder_palette_2) +
+  scale_fill_manual(values = founder_palette_2) +
+  scale_colour_manual(values = founder_palette_2) +
   ylim(c(0.5,1.05)) + 
   labs(x = "Dam Founder Strain",
        y = "Autosomal Genotype Concordance") + 
@@ -1394,27 +1403,38 @@ founder_yints <- founder_mean_ints %>%
 dir.create("../output", showWarnings = F)
 dir.create("../output/MUGA", showWarnings = F)
 
-write.csv(reference_genos_all_samples, file = "../output/MUGA/MUGA_genotypes.csv")
-system("gzip ../output/MUGA/MUGA_genotypes.csv")
+if(file.exists("../output/MUGA/MUGA_genotypes.csv.gz") == "FALSE"){
+  write.csv(reference_genos_all_samples, file = "../output/MUGA/MUGA_genotypes.csv")
+  system("gzip ../output/MUGA/MUGA_genotypes.csv")
+}
+if(file.exists("../output/MUGA/MUGA_x_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_xints_all_samples, file = "../output/MUGA/MUGA_x_intensities.csv")
+  system("gzip ../output/MUGA/MUGA_x_intensities.csv")
+}
+if(file.exists("../output/MUGA/MUGA_y_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_yints_all_samples, file = "../output/MUGA/MUGA_y_intensities.csv")
+  system("gzip ../output/MUGA/MUGA_y_intensities.csv")
+  
+}
+if(file.exists("../output/MUGA/MUGA_sample_metadata.csv") == "FALSE"){
+  write.csv(strain_assignment, file = "../output/MUGA/MUGA_sample_metadata.csv")
+}
 
-write.csv(reference_xints_all_samples, file = "../output/MUGA/MUGA_x_intensities.csv")
-system("gzip ../output/MUGA/MUGA_x_intensities.csv")
+if(file.exists("../output/MUGA/MUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+  write.csv(final_founder_consensus_genotypes, file = "../output/MUGA/MUGA_founder_consensus_genotypes.csv")
+  system("gzip ../output/MUGA/MUGA_founder_consensus_genotypes.csv")
+}
+if(file.exists("../output/MUGA/MUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_xints, file = "../output/MUGA/MUGA_founder_mean_x_intensities.csv")
+  system("gzip ../output/MUGA/MUGA_founder_mean_x_intensities.csv")
+}
+if(file.exists("../output/MUGA/MUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_yints, file = "../output/MUGA/MUGA_founder_mean_y_intensities.csv")
+  system("gzip ../output/MUGA/MUGA_founder_mean_y_intensities.csv")
+}
+if(file.exists("../output/MUGA/MUGA_founder_metadata.csv") == "FALSE"){
+  write.csv(founder_sample_metadata_conc, file = "../output/MUGA/MUGA_founder_metadata.csv")
+}
 
-write.csv(reference_yints_all_samples, file = "../output/MUGA/MUGA_y_intensities.csv")
-system("gzip ../output/MUGA/MUGA_y_intensities.csv")
-
-write.csv(strain_assignment, file = "../output/MUGA/MUGA_sample_metadata.csv")
-
-
-write.csv(final_founder_consensus_genotypes, file = "../output/MUGA/MUGA_founder_consensus_genotypes.csv")
-system("gzip ../output/MUGA/MUGA_founder_consensus_genotypes.csv")
-
-write.csv(founder_xints, file = "../output/MUGA/MUGA_founder_mean_x_intensities.csv")
-system("gzip ../output/MUGA/MUGA_founder_mean_x_intensities.csv")
-
-write.csv(founder_yints, file = "../output/MUGA/MUGA_founder_mean_y_intensities.csv")
-system("gzip ../output/MUGA/MUGA_founder_mean_y_intensities.csv")
-
-write.csv(founder_sample_metadata_conc, file = "../output/MUGA/MUGA_founder_metadata.csv")
 
 ```
