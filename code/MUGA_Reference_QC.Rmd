@@ -1370,6 +1370,25 @@ founder_sample_metadata_conc <- founder_concordance_df_3 %>%
                                 sire == "WSB/EiJ" ~ "H")) %>%
   tidyr::unite("letter", dam:sire, sep = "")
 
+# Founder Sample Intensities
+founder_mean_ints <- tidy_control_genotypes %>%
+  dplyr::select(marker, sample, X, Y) %>%
+  dplyr::filter(marker %in% good_markers$marker,
+                sample %in% final_founder_samples$sample) %>%
+  dplyr::right_join(., final_founder_samples %>%
+                      dplyr::filter(bg == "INBRED")) %>%
+  dplyr::left_join(., founder_sample_metadata) %>%
+  dplyr::group_by(marker, strain) %>%
+  dplyr::summarise(x_int = mean(X),
+                   y_int = mean(Y))
+
+founder_xints <- founder_mean_ints %>%
+  dplyr::select(marker, strain, x_int) %>%
+  tidyr::pivot_wider(names_from = strain, values_from = x_int)
+
+founder_yints <- founder_mean_ints %>%
+  dplyr::select(marker, strain, y_int) %>%
+  tidyr::pivot_wider(names_from = strain, values_from = y_int)
 
 
 dir.create("../output", showWarnings = F)
@@ -1384,17 +1403,16 @@ system("gzip ../output/MUGA/MUGA_x_intensities.csv")
 write.csv(reference_yints_all_samples, file = "../output/MUGA/MUGA_y_intensities.csv")
 system("gzip ../output/MUGA/MUGA_y_intensities.csv")
 
-#nope
-write.csv(reference_sample_metadata, file = "../output/MUGA/MUGA_sample_metadata.csv")
+write.csv(strain_assignment, file = "../output/MUGA/MUGA_sample_metadata.csv")
 
 
 write.csv(final_founder_consensus_genotypes, file = "../output/MUGA/MUGA_founder_consensus_genotypes.csv")
 system("gzip ../output/MUGA/MUGA_founder_consensus_genotypes.csv")
 
-write.csv(founder_mean_x_ints, file = "../output/MUGA/MUGA_founder_mean_x_intensities.csv")
+write.csv(founder_xints, file = "../output/MUGA/MUGA_founder_mean_x_intensities.csv")
 system("gzip ../output/MUGA/MUGA_founder_mean_x_intensities.csv")
 
-write.csv(founder_mean_y_ints, file = "../output/MUGA/MUGA_founder_mean_y_intensities.csv")
+write.csv(founder_yints, file = "../output/MUGA/MUGA_founder_mean_y_intensities.csv")
 system("gzip ../output/MUGA/MUGA_founder_mean_y_intensities.csv")
 
 write.csv(founder_sample_metadata_conc, file = "../output/MUGA/MUGA_founder_metadata.csv")
