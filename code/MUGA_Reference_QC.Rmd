@@ -644,11 +644,16 @@ ggplotly(sampleQC, tooltip = c("text","y"))
 
 ```
 
+From the sample QC plot, we can see that one of the NOD/ShiLtJ references samples is missing `r n.calls.strains.df[which(n.calls.strains.df$sample == "NOD/ShiLtJ-35335 (m)"),]$n.no.calls` genotypes, reducing our confidence in its use for consensus building. We exclude this sample in subsequent analyses.
+
 ### Validating sex of reference samples
 
 We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes.
 
 ```{r Filtering to Chr X Markers}
+## Bad samples
+bad_samples <- c("NOD/ShiLtJ-35335 (m)")
+
 ## Reading in genotype intensities
 long_intensities <- tidy_control_genotypes %>%
   dplyr::select(sample, marker, Chromosome, Position, genotype, X, Y, theta)
@@ -656,7 +661,8 @@ long_intensities <- tidy_control_genotypes %>%
 ## Joining slimmer intensity files with marker metadata and reducing to markers on sex chromosomes
 long_XY_intensities <- long_intensities %>%
   dplyr::left_join(., muga_metadata) %>%
-  dplyr::filter(Chromosome %in% c("X","Y"))
+  dplyr::filter(Chromosome %in% c("X","Y"),
+                !sample %in% bad_samples)
 
 # Expected output
 #          marker Chromosome Position genotype     X     Y  chr bp_mm10 bp_grcm39   cM_cox strand snp unique unmapped
@@ -689,7 +695,23 @@ flagged_XY_intensities <- long_XY_intensities %>%
 
 The first round of inferring predicted sexes used a rough search of the sample name for expected nomenclature convention, which includes a sex denotation.
 
-```{r Preliminary sex prediction}
+```{r preliminary sex labeling and founder sample breakdown}
+
+# Vector of founder strain names
+loose_founder_strains <- c("A/J","C57BL/6J","129","NOD",
+                           "NZO","CAST",    "PWK","WSB")
+
+# Re-flag genotypes based on bad markers or bad samples.
+# Inputs:
+# 1) All sample genotypes
+# 2) marker metadata
+# 3) flag cutoff tables
+genos.flagged <- tidy_control_genotypes %>%
+  dplyr::left_join(., muga_metadata) %>%
+  # Flagging markers and samples
+  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
+                                             true = "FLAG",
+                                             false = ""))
 
 ## First round of predicted sex inference
 ## Input: flagged XY intensities
@@ -714,105 +736,6 @@ prelim.predicted.sexes <- flagged_XY_intensities %>%
 # 6: GCAGCCTGCAAAACACCTTCCAAAACTACAAAAGCTGGCTAACAGAGAGC          FALSE                         m
 
 
-## Taking the first marker as a sample and tabulating the number of samples for each predicted sex
-predicted.sex.table <- prelim.predicted.sexes %>%
-  dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
-  dplyr::select(sample, predicted.sex) %>%
-  dplyr::group_by(predicted.sex) %>%
-  dplyr::count()
-
-```
-
-This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
-
-After predicting the sexes of the majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information. In many cases, pulling substrings of sample names as the sex of the sample was too sensitive and misclassified samples.
-
-
-```{r kmeans clustering, eval=FALSE, include=FALSE}
-
-# Clear visual clustering of samples motivated us to use a rough clustering method to quickly assign groups to samples based on X and Y chromsome probe intensities. K-means clustering is below supplying two clusters for each sex.
-# Inputs: 
-# 1) Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers
-# 2) Sample-averaged y-channel probe intensities for all chromosome Y markers
-rough_clusters <- kmeans(sex.chr.intensities[,4:5], centers = 2)$cluster
-
-# Joining each sample's cluster assignment to the sample-averaged intensity metrics
-sex.chr.k.means <- sex.chr.intensities %>%
-  dplyr::ungroup() %>%
-  dplyr::mutate(clust = as.factor(rough_clusters))
-
-# Generating a contingency table for how each cluster paired with each sex. 
-sex.by.cluster.tab <- sex.chr.k.means %>%
-  dplyr::group_by(predicted.sex, clust) %>%
-  dplyr::count() %>%
-  dplyr::arrange(desc(n))
-
-# The most common clusters should be the two sexes, k-means doesn't always assign the same cluster name to the same sex. Therefore, the top clusters must be pulled out and assigned sexes dynamically.
-top.clusters <- sex.by.cluster.tab[1:2,] %>%
-  dplyr::ungroup() %>%
-  dplyr::mutate(inferred.sex = predicted.sex) %>%
-  dplyr::select(-n,-predicted.sex)
-
-# Samples are then recoded according to the k-means assigned sexes
-reSexed_samples <- sex.chr.k.means %>%
-  dplyr::select(-predicted.sex) %>%
-  dplyr::left_join(.,top.clusters) %>%
-  dplyr::left_join(sex.chr.intensities %>%
-                     dplyr::select(sample, predicted.sex))
-
-# Prints a table of all samples with an option to view whether a sample had its sex redesignated.
-reSexed_samples_table <- reSexed_samples %>%
-  dplyr::mutate(resexed = predicted.sex != inferred.sex)
-reSexed_samples_table %>% 
-  dplyr::select(sample, resexed, predicted.sex, inferred.sex) %>%
-  DT::datatable(., filter = "top", 
-              escape = FALSE)
-```
-
-The plot below demonstrates that this clustering technique does a pretty good job at capturing the information we want. Moving forward with sample QC we used the reassigned inferred sexes of the samples.
-
-```{r kmeans plotting, eval=FALSE, include=FALSE}
-
-# Interactive scatter plot of intensities similar to above, but recolors and outlines samples based on redesignated sexes.
-reSexed.plot <- ggplot(reSexed_samples_table %>%
-         dplyr::arrange(predicted.sex),
-       mapping = aes(x = sumxy_int, 
-                     y = y_int, 
-                     fill = inferred.sex,
-                     colour = predicted.sex,
-                     text = sample,
-                     label = resexed,
-                     label2  = bad_sample)) + 
-  geom_point(shape = 21,size = 3, alpha = 0.7) + 
-  scale_colour_manual(values =  predicted.sex.palette) +
-  scale_fill_manual(values = c(unique(predicted.sex.palette)[1:2])) +
-  QCtheme
-
-ggplotly(reSexed.plot, 
-         tooltip = c("text","label","label2"))
-```
-
-### Validating reference sample genetic backgrounds
-
-A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
-
-```{r founder sample breakdown}
-
-# Vector of founder strain names
-loose_founder_strains <- c("A/J","C57BL/6J","129","NOD",
-                           "NZO","CAST",    "PWK","WSB")
-
-# Re-flag genotypes based on bad markers or bad samples.
-# Inputs:
-# 1) All sample genotypes
-# 2) marker metadata
-# 3) flag cutoff tables
-genos.flagged <- tidy_control_genotypes %>%
-  dplyr::left_join(., muga_metadata) %>%
-  # Flagging markers and samples
-  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
-                                             true = "FLAG",
-                                             false = ""))
 
 # Join the sample table with resex information with each sample's strain background from initial sex prediction.
 # Inputs:
@@ -942,57 +865,8 @@ DT::datatable(founder_sample_table, escape = FALSE,
 
 ```
 
+```{r Het rate for sexing}
 
-```{r founder sample dendrogram, fig.width=10, fig.height=10}
-# Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
-# Inputs: 
-# 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
-# 2) All sample genotypes with flag information
-founder_sample_genos <- final_founder_samples %>%
-  dplyr::select(-founder) %>%
-  dplyr::left_join(.,genos.flagged) %>%
-  dplyr::filter(marker_flag != "FLAG",
-                genotype != "N") %>%
-  dplyr::distinct(sample, marker, genotype, predicted.sex, dam, sire)
-
-
-# Creating a wide genotype table to compute the distance matrix for the dendrogram, filtering out the markers with multiple genotype calls per sample.
-wide_founder_sample_genos <- founder_sample_genos %>%
-  dplyr::select(sample, marker, genotype) %>%
-  tidyr::pivot_wider(names_from = marker, values_from = genotype)
-
-# Genotype calls at this point are still in letter form (i.e. A, T, or H for het). In order to calculate the distance matrix, we had to recode each marker's genotype information into 0, 1 for hets or 2. This process is applied column-wise.
-recoded_wide_sample_genos <- suppressWarnings(data.frame(apply(wide_founder_sample_genos[,2:ncol(wide_founder_sample_genos)], 2, recodeCalls)))
-dend.labels <- wide_founder_sample_genos %>%
-  dplyr::select(sample) %>%
-  dplyr::left_join(.,final_founder_samples %>%
-                     dplyr::select(sample, dam, sire) %>%
-                     dplyr::mutate(dam = as.character(dam),
-                                   sire = as.character(sire))) %>%
-  dplyr::mutate(bg = if_else(condition = dam == sire, 
-                             true = paste0(dam,"_",sample), 
-                             false = paste0(dam,"x",sire,"_",sample)))
-rownames(recoded_wide_sample_genos) <- dend.labels$bg
-
-# Scaling the genotype matrix, then calculating euclidean distance between all samples
-dd <- dist(scale(recoded_wide_sample_genos), method = "euclidean")
-hc <- hclust(dd, method = "ward.D2")
-
-# Plotting sample distances as a dendrogram
-ndendcolors <- 5
-dend_colors = c(brewer.pal(ndendcolors,"Paired")) 
-clus8 = cutree(hc, ndendcolors)
-plot(as.phylo(hc), type = "f", cex = 0.9, tip.color = dend_colors[clus8],
-     no.margin = T, label.offset = 1, edge.width = 0.5)
-
-```
-
-From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. 
-
-```{r}
-
-# Loop creates a data frame of consensus genotype calls for each CC/DO founder strain
-# In this case, "consensus" is designated by all samples of the same strain having identical genotype calls for the same marker
 XY_hetrate <- long_XY_intensities %>%
   # dplyr::right_join(., prelim.predicted.sexes, by = "sample") %>%
   dplyr::mutate(het = if_else(genotype == "H", "HET","NO_HET")) %>%
@@ -1010,7 +884,7 @@ XY_hetrate_plot <- ggplot(XY_hetrate, mapping = aes(x = predicted.sex, y = het_r
 ggplotly(XY_hetrate_plot)
 ```
 
-```{r Predicted sex visualization, eval=FALSE, include=FALSE}
+```{r Predicted sex visualization}
 
 # Input: Sex chromosome probe intensities for each marker with 1) marker metdata, 2) marker and sample flags, 3) background and sex predictions
 Xchr.int <- prelim.predicted.sexes %>%
@@ -1083,9 +957,148 @@ ggplotly(mean.x.intensities.by.sex.plot,
          tooltip = c("text","label"))
 ```
 
+Combining plots of heterozygosity rates of X and Y chromosomes and the sex chromosome probe intensities, we observed four samples that were originally classified as females that were likely male samples, including one named "NODxPWKm004 (f)" displaying proper sample nomenclature for a male sample. We have manually assigned these samples the appropriate sex designation.
+
+```{r Re-assigning sex}
+final.predicted.sex <- prelim.predicted.sexes %>%
+  dplyr::mutate(inferred.sex = if_else(condition = sample %in% c("PWK/PhJ (f)",
+                                                                 "NODxPWKm004 (f)",
+                                                                 "C57BL/6J (f)",
+                                                                 "WSB/EiJ (f)"), 
+                                       true = "m", 
+                                       false = predicted.sex),
+                resexed = if_else(condition = sample %in% c("PWK/PhJ (f)",
+                                                                 "NODxPWKm004 (f)",
+                                                                 "C57BL/6J (f)",
+                                                                 "WSB/EiJ (f)"), 
+                                       true = T, 
+                                       false = F))
+
+
+## Taking the first marker as a sample and tabulating the number of samples for each predicted sex
+predicted.sex.table <- final.predicted.sex %>%
+  dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
+  dplyr::select(sample, inferred.sex) %>%
+  dplyr::group_by(inferred.sex) %>%
+  dplyr::count()
+
+```
+
+This captured `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
+
+```{r Inferred sex visualization}
+Xchr.int <- final.predicted.sex %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(marker_flag != "FLAG",
+                Chromosome == "X") %>%
+  dplyr::mutate(x.chr.int = X + Y,
+                theta = as.numeric(theta)) %>%
+  dplyr::group_by(sample, inferred.sex) %>%
+  dplyr::summarise(mean.x.chr.int = mean(x.chr.int),
+                   mean.x = mean(X),
+                   mean.theta = mean(theta))
+
+
+Ychr.int <- final.predicted.sex %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(theta = as.numeric(theta)) %>%
+  dplyr::filter(marker_flag != "FLAG",
+                Chromosome == "Y") %>%
+  dplyr::group_by(sample, inferred.sex) %>%
+  dplyr::summarise(mean.y.int = mean(Y),
+                   mean.theta = mean(theta))
+
+
+
+# Column binding the two intensities if the sample information matches
+if(unique(Xchr.int$sample == Ychr.int$sample) == TRUE){
+  sex.chr.intensities <- cbind(Xchr.int,Ychr.int$mean.y.int)
+  colnames(sex.chr.intensities) <- c("sample","inferred.sex","sumxy_int","x_int","mean_theta","y_int")
+}
+
+# Interactive visualization of sex prediction results. Sample are colored according to predicted sex. "Unknown" samples are plotted black, and flagged/bad samples are triangles.
+final.sex.plot.palettes <- sex.chr.intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct(sample, inferred.sex) %>%
+  dplyr::mutate(final.sex.palette = dplyr::case_when(inferred.sex == "f" ~ "#5856b7",
+                                                     inferred.sex == "m" ~ "#eeb868",
+                                                     inferred.sex == "unknown" ~ "black"))
+final.sex.palette <- final.sex.plot.palettes$final.sex.palette
+names(predicted.sex.palette) <- final.sex.plot.palettes$inferred.sex
+mean.x.intensities.by.sex.plot <- ggplot(sex.chr.intensities %>%
+                                           dplyr::left_join(., final.predicted.sex %>% 
+                                                              dplyr::distinct(sample, inferred.sex, resexed)), 
+                                         mapping = aes(x = sumxy_int, 
+                                                       y = y_int, 
+                                                       colour = inferred.sex,
+                                                       fill = resexed,
+                                                       text = sample)) + 
+  geom_point() + 
+  scale_colour_manual(values = predicted.sex.palette) + 
+  scale_fill_manual(values = c("black","white")) +
+  # facet_grid(.~chr) +
+  QCtheme
+ggplotly(mean.x.intensities.by.sex.plot, 
+         tooltip = c("text","label"))
+```
+
+
+### Validating reference sample genetic backgrounds
+
+A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
+
+
+```{r founder sample dendrogram, fig.width=10, fig.height=10}
+sample.predicted.sexes.df <- final.predicted.sex %>%
+  dplyr::distinct(sample, inferred.sex)
+
+# Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
+# Inputs: 
+# 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
+# 2) All sample genotypes with flag information
+founder_sample_genos <- final_founder_samples %>%
+  dplyr::left_join(., sample.predicted.sexes.df) %>%
+  dplyr::select(-founder) %>%
+  dplyr::left_join(.,genos.flagged) %>%
+  dplyr::filter(marker_flag != "FLAG",
+                genotype != "N") %>%
+  dplyr::distinct(sample, marker, genotype, inferred.sex, dam, sire)
+
+
+# Creating a wide genotype table to compute the distance matrix for the dendrogram, filtering out the markers with multiple genotype calls per sample.
+wide_founder_sample_genos <- founder_sample_genos %>%
+  dplyr::select(sample, marker, genotype) %>%
+  tidyr::pivot_wider(names_from = marker, values_from = genotype)
+
+# Genotype calls at this point are still in letter form (i.e. A, T, or H for het). In order to calculate the distance matrix, we had to recode each marker's genotype information into 0, 1 for hets or 2. This process is applied column-wise.
+recoded_wide_sample_genos <- suppressWarnings(data.frame(apply(wide_founder_sample_genos[,2:ncol(wide_founder_sample_genos)], 2, recodeCalls)))
+dend.labels <- wide_founder_sample_genos %>%
+  dplyr::select(sample) %>%
+  dplyr::left_join(.,final_founder_samples %>%
+                     dplyr::select(sample, dam, sire) %>%
+                     dplyr::mutate(dam = as.character(dam),
+                                   sire = as.character(sire))) %>%
+  dplyr::mutate(bg = if_else(condition = dam == sire, 
+                             true = paste0(dam,"_",sample), 
+                             false = paste0(dam,"x",sire,"_",sample)))
+rownames(recoded_wide_sample_genos) <- dend.labels$bg
+
+# Scaling the genotype matrix, then calculating euclidean distance between all samples
+dd <- dist(scale(recoded_wide_sample_genos), method = "euclidean")
+hc <- hclust(dd, method = "ward.D2")
+
+# Plotting sample distances as a dendrogram
+ndendcolors <- 3
+dend_colors = c(brewer.pal(ndendcolors,"Paired")) 
+clus8 = cutree(hc, ndendcolors)
+plot(as.phylo(hc), type = "f", cex = 1.3, tip.color = dend_colors[clus8],
+     no.margin = T, label.offset = 1, edge.width = 0.5)
+
+```
+
+From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. 
+
 ```{r generate founder consensus calls}
-
-
 for(f in strict_founder_strains){
   
   print(paste("Generating Calls for",f))
@@ -1110,45 +1123,6 @@ for(f in strict_founder_strains){
     dplyr::filter(n == max(founder.allele.counts$n)) %>%
     dplyr::select(-n) %>%
     `colnames<-`(c("marker",f))
-
-  # # Collect markers where there is some disagreement
-  # incomplete_founder_genos <- founder.allele.counts %>%
-  #   dplyr::filter(n != max(founder.allele.counts$n)) %>%
-  #   dplyr::select(-n) %>%
-  #   `colnames<-`(c("marker",f))
-  # 
-  # # Filter sample genotypes to markers with genotype disagreement
-  # incomplete_founder_genos_samples <- founder.geno.array %>%
-  #   dplyr::filter(marker %in% unique(incomplete_founder_genos$marker)) %>%
-  #   dplyr::select(sample, genotype, marker) %>% 
-  #   dplyr::arrange(marker)
-  # 
-  # # Join intensities to discordant genotyped samples
-  # incomplete_founder_genos_ints_samples <- long_intensities %>%
-  #   dplyr::right_join(.,incomplete_founder_genos_samples)
-  # 
-  # # Create nested list by marker of sample genotypes and respective intensities to be able to eliminate certain genotypes off the bat based on outlier intensity values *within* a founder background
-  # incomplete_founder_genos_ints_samples_nested <- incomplete_founder_genos_ints_samples %>%
-  #   dplyr::group_by(marker) %>%
-  #   tidyr::nest()
-  # 
-  # # Remove samples with extreme intensity values to try to create better consensus for the founder strain
-  # incomplete_founder_consensus <- purrr::pmap(.l = list(incomplete_founder_genos_ints_samples_nested$marker,
-  #                                                       incomplete_founder_genos_ints_samples_nested$data,
-  #                                                       rep(f, length(incomplete_founder_genos_ints_samples_nested$data))),
-  #                                             .f = removeExtremeInts) %>%
-  #   Reduce(rbind,.)
-  # 
-  # # Identify markers where there is now 1 genotype across samples after removing extreme intensities
-  # recaptured_tally <- incomplete_founder_consensus %>%
-  #   dplyr::group_by(marker) %>%
-  #   dplyr::count() %>%
-  #   dplyr::filter(n == 1)
-  # 
-  # # Re-attach these re-inferred genotype calls to the consensus that already exists
-  # founder_genos <- complete_founder_genos %>%
-  #   dplyr::bind_rows(.,incomplete_founder_consensus %>% 
-  #                      dplyr::filter(marker %in% recaptured_tally$marker))
 
   # Assign these calls to a founder object
   assign(paste0("Calls_",f), complete_founder_genos)
@@ -1179,18 +1153,21 @@ filtered_consensus_calls <- purrr::map(founder_consensus_calls,
 
 # Filter samples down to inbred strains and attach a proper strain name column
 founder_sample_metadata <- final_founder_samples %>%
+  dplyr::left_join(., sample.predicted.sexes.df) %>%
   dplyr::mutate(dam = as.character(dam),
                 sire = as.character(sire),
-                strain = if_else(dam == sire, true = dam, false = "CROSS")) %>% 
+                strain = if_else(dam == sire, true = dam, false = "CROSS"),
+                resexed = if_else(predicted.sex != inferred.sex, true = "TRUE", false = "FALSE")) %>% 
+  dplyr::select(-inferred.sex) %>%
   dplyr::filter(bg == "INBRED", 
                 strain %in% strict_founder_strains)
-#                 sample         dam        sire predicted.sex founder     bg      strain
-# 1:             A/J (f)         A/J         A/J             f FOUNDER INBRED         A/J
-# 2:         A/Jm111 (m)         A/J         A/J             m FOUNDER INBRED         A/J
-# 3:        C57BL/6J (f)    C57BL/6J    C57BL/6J             f FOUNDER INBRED    C57BL/6J
-# 4:     129S1/SvImJ (f) 129S1/SvImJ 129S1/SvImJ             f FOUNDER INBRED 129S1/SvImJ
-# 5: 129S1/SvImJm212 (m) 129S1/SvImJ 129S1/SvImJ             m FOUNDER INBRED 129S1/SvImJ
-# 6:         NOD/LtJ (f)  NOD/ShiLtJ  NOD/ShiLtJ             f FOUNDER INBRED  NOD/ShiLtJ
+#                 sample         dam        sire predicted.sex founder     bg      strain resexed
+# 1:             A/J (f)         A/J         A/J             f FOUNDER INBRED         A/J   FALSE
+# 2:         A/Jm111 (m)         A/J         A/J             m FOUNDER INBRED         A/J   FALSE
+# 3:        C57BL/6J (f)    C57BL/6J    C57BL/6J             f FOUNDER INBRED    C57BL/6J    TRUE
+# 4:     129S1/SvImJ (f) 129S1/SvImJ 129S1/SvImJ             f FOUNDER INBRED 129S1/SvImJ   FALSE
+# 5: 129S1/SvImJm212 (m) 129S1/SvImJ 129S1/SvImJ             m FOUNDER INBRED 129S1/SvImJ   FALSE
+# 6:         NOD/LtJ (f)  NOD/ShiLtJ  NOD/ShiLtJ             f FOUNDER INBRED  NOD/ShiLtJ   FALSE
 
 
 # Create column index for intensity data tables
@@ -1222,8 +1199,9 @@ missing_consensus_calls_nested <- founder_consensus_incomplete %>%
 
 ```
 
-In order to generate a consensus call for each CC/DO founder, we had to determine whether individual samples for a given founder were correctly typed and, if the marker failed, eliminate it so that consensus could be formed. Below is an example of what that might look like for an individual marker. Note how when at least one sample for a given strain is not assigned one of the two expected alleles, the consensus is an "NA".
+In order to generate a consensus call for each CC/DO founder, we had to determine whether individual samples for a given founder were correctly typed and, if the marker failed, eliminate it so that consensus could be formed. We observed `r length(missing_consensus_calls_nested$marker)` markers. For each one, we used the intensity data to identify problematic founder samples, eliminate them, and then use good founder samples to re-classify missing consensus genotypes for strains where they were missing before.
 
+Below is an example of what that might look like for an individual marker. Note how when at least one sample for a given strain is not assigned one of the two expected alleles, the consensus is an "NA".
 ```{r}
 # Sample a marker at random
 # m <- sample(seq(1:length(missing_consensus_calls_nested$marker)), size = 1)
@@ -1251,7 +1229,6 @@ ggplotly(sample_genotypes_plot)
 ggplotly(consensus_genotypes_plot)
 ```
 
-We observed `r length(missing_consensus_calls_nested$marker)` markers. For each one, we used the intensity data to identify problematic founder samples, eliminate them, and then use good founder samples to re-classify missing consensus genotypes for strains where they were missing before. Below is the expected output of that process.
 
 ```{r visual of consensus reassignment}
 example_output <- findConsensusGenotypes(mk = missing_consensus_calls_nested$marker[[m]], 
