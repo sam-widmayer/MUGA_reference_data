@@ -12,19 +12,23 @@ output:
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
-library(tidyverse)
-library(data.table)
-library(purrr)
-library(furrr)
-library(qtl2)
-library(magrittr)
-library(DT)
-library(plotly)
-library(progress)
-library(ape)
-library(RColorBrewer)
-library(tictoc)
-library(furrr)
+# library(tidyverse)
+# ^ this if running locally
+require(dplyr)
+require(tidyr)
+require(stringr)
+# ^ these if running on sumner
+require(data.table)
+require(purrr)
+require(furrr)
+require(qtl2)
+require(magrittr)
+require(DT)
+require(plotly)
+require(progress)
+require(ape)
+require(RColorBrewer)
+require(furrr)
 future::plan(multicore)
 today <- format(Sys.Date(), format="%Y%m%d")
 QCtheme <- theme_bw() + 
@@ -1456,7 +1460,7 @@ for(f in founder_strains_2){
 
 
 # First form a list of dams that comprise each F1 cross type
-dams <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
+dams <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2, .name_repair = "minimal")) %>%
   `colnames<-`(c("dams","sires")) %>%
   # Select crosses between strains
   # filter(dams != sires) %>%
@@ -1469,7 +1473,7 @@ for(i in 1:length(dams$dams)){
 }
 
 # Do the same for the sires for each F1
-sires <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2)) %>%
+sires <- data.frame(tidyr::expand_grid(founder_strains_2, founder_strains_2, .name_repair = "minimal")) %>%
   `colnames<-`(c("dams","sires")) %>%
   # filter(dams != sires) %>%
   dplyr::select(sires) %>%
@@ -1506,7 +1510,7 @@ founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
 founder_concordance_df_3 <- founder_concordance_df_2 %>%
   dplyr::filter(alt_chr == "Autosome")
 concordance_plot <- ggplot(founder_concordance_df_3, mapping = aes(x = dam, y = concordance, color = dam, fill = sire)) + 
-  geom_jitter(shape = 21, width = 0.10) +
+  geom_jitter(shape = 21, width = 0.25) +
   scale_fill_manual(values = founder_palette_2) +
   scale_colour_manual(values = founder_palette_2) +
   ylim(c(0.5,1.05)) + 
@@ -1686,27 +1690,37 @@ founder_sample_metadata_conc <- founder_concordance_df_3 %>%
 dir.create("../output", showWarnings = F)
 dir.create("../output/MegaMUGA", showWarnings = F)
 
-write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genotypes.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_genotypes.csv")
+if(file.exists("../output/MegaMUGA/MegaMUGA_genotypes.csv.gz") == "FALSE"){
+  write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genotypes.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_genotypes.csv")
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_x_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_x_intensities.csv")  
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_y_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_y_intensities.csv")
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_sample_metadata.csv") == "FALSE"){
+  write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
+}
 
-write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_x_intensities.csv")
-
-write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_y_intensities.csv")
-
-write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
-
-
-write.csv(final_founder_consensus_genotypes, file = "../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
-
-write.csv(founder_mean_x_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
-
-write.csv(founder_mean_y_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
-system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
-
-write.csv(founder_sample_metadata_conc, file = "../output/MegaMUGA/MegaMUGA_founder_metadata.csv")
+if(file.exists("../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+  write.csv(final_founder_consensus_genotypes, 
+            file = "../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_mean_x_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_mean_y_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
+  system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
+}
+if(file.exists("../output/MegaMUGA/MegaMUGA_founder_metadata.csv") == "FALSE"){
+  write.csv(founder_sample_metadata_conc, file = "../output/MegaMUGA/MegaMUGA_founder_metadata.csv")
+}
 
 ```
