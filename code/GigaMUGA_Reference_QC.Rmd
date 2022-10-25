@@ -12,7 +12,12 @@ output:
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
-library(tidyverse)
+# library(tidyverse)
+# ^ this if running locally
+require(dplyr)
+require(tidyr)
+require(stringr)
+# ^ these if running on sumner
 library(data.table)
 library(purrr)
 library(furrr)
@@ -39,11 +44,11 @@ gigamuga_read <- function(ch){
   
   print(paste0("Reading genotype data for lines ", ch, "-", c(ch+n_genos*100)))
   control_genotypes_header <- vroom::vroom(file = "../data/GigaMUGA/GigaMUGA_control_genotypes.txt",
-                                    num_threads = 4, 
+                                    num_threads = 1, 
                                     skip = 0,
                                     n_max = 1, col_names = T)
   control_genotypes <- vroom::vroom(file = "../data/GigaMUGA/GigaMUGA_control_genotypes.txt",
-                                    num_threads = 4, 
+                                    num_threads = 16, # trying on sumner
                                     skip = ch,
                                     n_max = n_genos*100,
                                     col_names = colnames(control_genotypes_header))
@@ -55,7 +60,7 @@ gigamuga_read <- function(ch){
   
   
   gm_genotypes <- control_genotypes_meta %>%
-    dplyr::select(marker, sample_id, allele_1, allele_2, X, Y)
+    dplyr::select(marker, allele_1, allele_2, sample_id, X, Y)
   print(paste0("Calling genotypes for lines ", ch, "-", c(ch+n_genos*100)))
   gm_genotypes$genotype <- apply(gm_genotypes, 1, callGeno)
   
@@ -518,17 +523,17 @@ read_chunks <- seq(1, all_rows+1,
 
 
 gigamuga_control_genotypes_list <- furrr::future_map(read_chunks,
-                                                     gigamuga_read)
+                                                     gigamuga_read, 
+                                                     .progress = T)
 
 
-
-sample_marker_summary <- purrr::map(.x = gigamuga_control_genotypes_list,
-           .f =  function(x){
-             x %>% 
-               dplyr::group_by(sample_id) %>%
-               dplyr::count()
-             }
-           ) %>% Reduce(rbind,.)
+# Verify that all markers for all samples were read by future_map file reading
+# sample_marker_summary <- furrr::future_map(.x = gigamuga_control_genotypes_list,
+#                                            .f =  function(x){
+#                                              x %>% 
+#                                                dplyr::group_by(sample_id) %>%
+#                                                dplyr::count()
+#                                              }, .progress = T) %>% Reduce(rbind,.)
 
 
 ```
@@ -540,29 +545,34 @@ We searched for probes where many mice are missing genotype calls.
 ```{r Markers with high "N" counts among reference samples}
 
 ## Calculating allele frequencies for each marker
-control_allele_freqs <- control_genotypes %>%
-  tidyr::pivot_longer(-marker, names_to = "sample", values_to = "genotype") %>%
-  dplyr::group_by(marker, genotype) %>%
-  dplyr::count() %>%
-  # Result: number of genotype calls for each marker across all samples
-  # i.e.
-  #  marker            genotype     n
-  #  B6_01-033811444-S A            8
-  #  B6_01-033811444-S H            2
-  #  B6_01-033811444-S N            1
-  
-  dplyr::ungroup() %>%
-  dplyr::group_by(marker) %>%
-  dplyr::mutate(freq = round(n/sum(n), 3),
-                genotype = as.factor(genotype)) %>%
-  # Result: allele frequency calls for each marker across all samples
-  # i.e.
-#  marker            genotype   n  freq
-#  B6_01-033811444-S        A   8 0.022
-#  B6_01-033811444-S        H   2 0.005
-#  B6_01-033811444-S        N   1 0.003
-#  B6_01-033811444-S        T 353 0.970
-  dplyr::left_join(., mm_metadata)
+control_allele_freqs <- furrr::future_map(gigamuga_control_genotypes_list,
+                  function(x){
+                    control_allele_freqs <- x %>%
+                      dplyr::group_by(marker, genotype) %>%
+                      dplyr::count() %>% 
+                      dplyr::ungroup() %>%
+                      dplyr::group_by(marker) %>%
+                      dplyr::mutate(genotype = if_else(condition = genotype == "-", 
+                                                       true = "N", 
+                                                       false = as.character(genotype)),
+                                    freq = round(n/sum(n), 3),
+                                    genotype = as.factor(genotype)) %>%
+                      dplyr::left_join(., gm_metadata)
+                    return(control_allele_freqs)
+                  }, .progress = T) %>% 
+  Reduce(rbind, .)
+
+
+# Result: allele frequency calls for each marker across all samples
+# i.e.
+#   marker            genotype     n  freq
+#   <chr>             <fct>    <int> <dbl>
+# 1 AmpR002           N           99  0.99
+# 2 AmpR002           T            1  0.01
+# 3 B6_01-011986786-S C           74  0.74
+# 4 B6_01-011986786-S H           21  0.21
+# 5 B6_01-011986786-S T            5  0.05
+# 6 B6_01-033811444-S N            1  0.01
 
 
 ## Filtering to markers with missing genotypes
@@ -587,7 +597,7 @@ Of `r length(unique(as.factor(control_allele_freqs$marker)))` markers, `r nrow(n
 
 # Returns a table of bad markers with all available metadata
 above.cutoff %>%
-  dplyr::left_join(.,mm_metadata) %>%
+  dplyr::left_join(.,gm_metadata) %>%
   dplyr::mutate(chr = as.factor(chr)) %>%
   dplyr::arrange(marker) %>%
   DT::datatable(., filter = "top", 
@@ -614,33 +624,38 @@ In a similar fashion, we calculated the number of reference samples with missing
 ```{r Reference samples with high missingness}
 
 ## Calculating the number of missing markers for each sample
-n.calls.strains <- apply(X = control_genotypes[,2:ncol(control_genotypes)], 
-                         MARGIN = 2, 
-                         function(x) table(x)[5])
-n.calls.strains.df <- data.frame(n.calls.strains)
-n.calls.strains.df$sample <- names(n.calls.strains)
-n.calls.strains.df %<>%
-  dplyr::rename(n.no.calls = n.calls.strains)
-# n.no.calls                                   sample
-# 2355                       (129S1/SvImJxA/J)F1f0056
-# 2204                       (129S1/SvImJxA/J)F1f0056
-# 2171                 (129S1/SvImJxC57BL/6J)F1f15916
-# 2348                 (129S1/SvImJxC57BL/6J)F1m15914
-# 2232                   (129S1/SvImJxCAST/EiJ)F1f005
-# 2328                   (129S1/SvImJxCAST/EiJ)F1m002
-# 2291                (129S1/SvImJxNOD/ShiLtJ)F1f0063
-# 2197                 (129S1/SvImJxNZO/HILtJ)F1f0005
-# 2316                 (129S1/SvImJxNZO/HILtJ)F1m0004
+n.calls.strains <- furrr::future_map(gigamuga_control_genotypes_list,
+                                     function(x){
+                                       sample_Ns <- x %>%
+                                         dplyr::group_by(sample_id, genotype) %>%
+                                         dplyr::count() %>% 
+                                         dplyr::ungroup() %>%
+                                         dplyr::group_by(sample_id) %>%
+                                         dplyr::mutate(genotype = if_else(condition = genotype == "-", true = "N", false = as.character(genotype)))
+                                       return(sample_Ns)}) %>% 
+  Reduce(dplyr::bind_rows, .) %>%
+  dplyr::filter(genotype == "N") %>%
+  dplyr::select(n, sample_id) %>%
+  dplyr::rename(n.no.calls = n)
+
+#   n.no.calls sample_id      
+#        <int> <chr>          
+# 1       8420 129P1/ReJm35858
+# 2       7824 C57BL/6CRmep1  
+# 3       8188 NIH_TVD_YS-A1  
+# 4       8060 NIH_TVD_YS-A10 
+# 5       8105 NIH_TVD_YS-A11 
+# 6       8762 NIH_TVD_YS-A12 
 
 
 ## Interactive plot of the number of missing genotypes for each sample.
-bad_sample_cutoff <- quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20]
-high.n.samples <- n.calls.strains.df %>%
+bad_sample_cutoff <- quantile(n.calls.strains$n.no.calls, probs = seq(0,1,0.05))[20]
+high.n.samples <- n.calls.strains %>%
   dplyr::filter(n.no.calls > bad_sample_cutoff)
-sampleQC <- ggplot(n.calls.strains.df, 
-                   mapping = aes(x = reorder(sample,n.no.calls), 
+sampleQC <- ggplot(n.calls.strains, 
+                   mapping = aes(x = reorder(sample_id,n.no.calls), 
                                  y = n.no.calls,
-                                 text = paste("Sample:", sample))) + 
+                                 text = paste("Sample:", sample_id))) + 
   geom_point() +
   QCtheme + 
   theme(axis.text.x = element_blank(),
