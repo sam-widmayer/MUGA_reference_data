@@ -1,0 +1,31 @@
+# Build dockerfile on change
+name: Build Docker (env/MUGA_QC.Dockerfile)
+
+on:
+  push:
+    paths:
+    - 'env/MUGA_QC.Dockerfile'
+    - '.github/workflows/build_docker.yml'
+  pull_request:
+    paths:
+    - 'env/MUGA_QC.Dockerfile'
+    - '.github/workflows/build_docker.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    # Build Tools
+    - name: Build and Publish
+      uses: elgohr/Publish-Docker-Github-Action@v4
+      with:
+        name: sjwidmay/MUGA_QC
+        username: ${{ secrets.SJW_DOCKER_USER }}
+        password: ${{ secrets.SJW_DOCKER_PASS }}
+        snapshot: true
+        dockerfile: MUGA_QC.Dockerfile
+        workdir: "env"
+        tags: "latest"
+        cache: true
