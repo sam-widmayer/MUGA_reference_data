@@ -12,26 +12,27 @@ output:
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
-# library(tidyverse)
+# require(tidyverse)
 # ^ this if running locally
 require(dplyr)
 require(tidyr)
 require(stringr)
+require(parallel)
 # ^ these if running on sumner
-library(data.table)
-library(purrr)
-library(furrr)
-library(qtl2)
-library(magrittr)
-library(DT)
-library(plotly)
-library(progress)
-library(ape)
-library(RColorBrewer)
-library(tictoc)
-library(furrr)
-library(vroom)
-future::plan(multicore)
+require(data.table)
+require(multidplyr)
+require(purrr)
+require(furrr)
+require(qtl2)
+require(magrittr)
+require(DT)
+require(plotly)
+require(progress)
+require(ape)
+require(RColorBrewer)
+require(tictoc)
+require(furrr)
+require(vroom)
 today <- format(Sys.Date(), format="%Y%m%d")
 QCtheme <- theme_bw() + 
   theme(panel.grid = element_blank(),
@@ -48,7 +49,7 @@ gigamuga_read <- function(ch){
                                     skip = 0,
                                     n_max = 1, col_names = T)
   control_genotypes <- vroom::vroom(file = "../data/GigaMUGA/GigaMUGA_control_genotypes.txt",
-                                    num_threads = 16, # trying on sumner
+                                    num_threads = 32, # trying on sumner
                                     skip = ch,
                                     n_max = n_genos*100,
                                     col_names = colnames(control_genotypes_header))
@@ -500,7 +501,6 @@ findConsensusGenotypes <- function(mk, data){
   }
 }
 
-
 ```
 
 ## Reading in reference genotypes and metadata
@@ -510,32 +510,31 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 ```{r Reading in reference genotypes and metadata}
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
-gm_metadata <- vroom::vroom("../data/GigaMUGA/gm_uwisc_v2.csv")
-gm_samples <- vroom::vroom("../data/GigaMUGA/Sample_Map.txt")
+gm_metadata <- vroom::vroom("../data/GigaMUGA/gm_uwisc_v2.csv", num_threads = detectCores())
+gm_samples <- vroom::vroom("../data/GigaMUGA/Sample_Map.txt", num_threads = detectCores())
 
-## Determining dimensions of data needing to be read in
-n_genos <- 143259
-n_samples <- nrow(gm_samples)
-all_rows <- n_genos*n_samples 
-options(scipen = 99999999)
-read_chunks <- seq(1, all_rows+1,
-                   by = n_genos*100) 
+print("time to read in genotypes:")
+tictoc::tic()
+control_genotypes <- vroom::vroom("../data/GigaMUGA/GigaMUGA_control_genotypes.txt", 
+                                  num_threads = detectCores(), progress = T)
+tictoc::toc()
 
+print("time to join metadata to genotypes:")
+tictoc::tic()
+control_genotypes %<>%
+  dplyr::rename(marker = `SNP Name`,
+                sample_id = `Sample ID`,
+                allele1 = `Allele1 - Forward`,
+                allele2 = `Allele2 - Forward`) %>%
+  dplyr::left_join(., gm_metadata)
+tictoc::toc()
 
-gigamuga_control_genotypes_list <- furrr::future_map(read_chunks,
-                                                     gigamuga_read, 
-                                                     .progress = T)
-
-
-# Verify that all markers for all samples were read by future_map file reading
-# sample_marker_summary <- furrr::future_map(.x = gigamuga_control_genotypes_list,
-#                                            .f =  function(x){
-#                                              x %>% 
-#                                                dplyr::group_by(sample_id) %>%
-#                                                dplyr::count()
-#                                              }, .progress = T) %>% Reduce(rbind,.)
-
-
+print("time to nest genotypes by chromosome:")
+tictoc::tic()
+control_genotypes_nest_chr <- control_genotypes %>%
+  dplyr::group_by(chr) %>%
+  tidyr::nest()
+tictoc::toc()
 ```
 
 ## Marker QC: Searching for missing genotype calls
@@ -543,9 +542,18 @@ gigamuga_control_genotypes_list <- furrr::future_map(read_chunks,
 We searched for probes where many mice are missing genotype calls.
 
 ```{r Markers with high "N" counts among reference samples}
+future::plan(multicore)
+
+tictoc::tic()
+furrr::future_map(control_genotypes_nest_chr$data[1:2], function(x){
+  x %>% 
+    dplyr::select(marker, allele1, allele2, everything()) %>%
+    apply(., 1, callGeno)
+})
+tictoc::toc()
 
 ## Calculating allele frequencies for each marker
-control_allele_freqs <- furrr::future_map(gigamuga_control_genotypes_list,
+control_allele_freqs <- furrr::future_map(control_genotypes_nest_chr,
                   function(x){
                     control_allele_freqs <- x %>%
                       dplyr::group_by(marker, genotype) %>%
