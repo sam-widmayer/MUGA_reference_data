@@ -25,7 +25,8 @@ callGeno <- function(x){
 }
 
 writeChrGenos <- function(x,y){
-  vroom::vroom_write(x, 
+print(paste0("Writing Chromosome ",y)) 
+ vroom::vroom_write(x, 
                     file = paste0("data/GigaMUGA/gm_genos_chr_",y,".csv"),
                     delim = ",",
                     num_threads = parallel::detectCores())
@@ -68,7 +69,7 @@ tictoc::toc()
 
 print("Writing chromosome-level genotype files")
 
-
+future::plan(multicore)
 furrr::future_map2(control_genotypes_nest_chr$data,
                    control_genotypes_nest_chr$chr,
                    writeChrGenos)
