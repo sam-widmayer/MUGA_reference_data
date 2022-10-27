@@ -25,14 +25,17 @@ callGeno <- function(x){
 }
 
 writeChrGenos <- function(x,y){
-print(paste0("Writing Chromosome ",y)) 
- vroom::vroom_write(x, 
+print(paste0("Writing Chromosome ",y))
+  x$genotype <- apply(x, 1, callGeno)
+  vroom::vroom_write(x, 
                     file = paste0("data/GigaMUGA/gm_genos_chr_",y,".csv"),
                     delim = ",",
                     num_threads = parallel::detectCores())
 }
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
+
+print(paste("Number of cores: ",detectCores()))
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv", num_threads = parallel::detectCores())
 
 
@@ -69,7 +72,14 @@ tictoc::toc()
 
 print("Writing chromosome-level genotype files")
 
-future::plan(multicore)
+future::plan(multisession, workers = detectCores())
+make_chunks <- furrr:::make_chunks
+if(detectCores() > length(control_genotypes_nest_chr$chr)){
+  make_chunks(n_x = length(control_genotypes_nest_chr$chr), n_workers = detectCores())
+} else {
+  make_chunks(n_x = length(control_genotypes_nest_chr$chr), chunk_size = detectCores()/8)
+}
+
 furrr::future_map2(control_genotypes_nest_chr$data,
                    control_genotypes_nest_chr$chr,
                    writeChrGenos)
