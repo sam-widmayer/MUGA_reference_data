@@ -11,7 +11,6 @@ require(furrr)
 require(magrittr)
 require(vroom)
 
-
 callGeno <- function(x){
   
   # Compare genotypes from both strains
@@ -24,7 +23,6 @@ callGeno <- function(x){
       }
       return(predicted.geno)
 }
-
 writeChrGenos <- function(x,y){
   print(paste0("Writing Chromosome ",y))
   x$genotype <- apply(x, 1, callGeno)
@@ -34,36 +32,33 @@ writeChrGenos <- function(x,y){
 print(paste("Number of cores: ",detectCores()))
 
 # Reading in genotypes
-print("time to read in genotypes and write fst:")
-tictoc::tic()
-control_genotypes <- vroom::vroom("data/GigaMUGA/GigaMUGA_control_genotypes.txt",
-                                  num_threads = parallel::detectCores(),
-                                  progress = T)
-fst::write.fst(control_genotypes, "data/GigaMUGA/GigaMUGA_control_genotypes.fst")
-tictoc::toc()
+if(!file.exists("data/GigaMUGA/GigaMUGA_control_genotypes.fst")){
+  control_genotypes <- vroom::vroom("data/GigaMUGA/GigaMUGA_control_genotypes.txt",
+                                    num_threads = parallel::detectCores(),
+                                    progress = T)
+  fst::write.fst(control_genotypes, "data/GigaMUGA/GigaMUGA_control_genotypes.fst")
+  }
 
-
-
-tictoc::tic()
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
+                            progress = T)
+print("Writing chromosome-level genotype files")
 control_genotypes_nest_chr <- read.fst("data/GigaMUGA/GigaMUGA_control_genotypes.fst") %>%
   dplyr::rename(marker = `SNP Name`,
                 sample_id = `Sample ID`,
                 allele1 = `Allele1 - Forward`,
                 allele2 = `Allele2 - Forward`) %>%
   dplyr::select(marker, allele1, allele2, everything()) %>%
+  dplyr::left_join(., gm_metadata) %>%
   dplyr::group_by(chr) %>%
   tidyr::nest()
-tictoc::tic()
 
 
-print("Writing chromosome-level genotype files")
-
-future::plan(multisession, workers = detectCores())
+future::plan(multisession, workers = parallel::detectCores())
 make_chunks <- furrr:::make_chunks
 if(detectCores() > length(control_genotypes_nest_chr$chr)){
-  make_chunks(n_x = length(control_genotypes_nest_chr$chr), n_workers = detectCores())
+  make_chunks(n_x = length(control_genotypes_nest_chr$chr), n_workers = parallel::detectCores())
 } else {
-  make_chunks(n_x = length(control_genotypes_nest_chr$chr), chunk_size = detectCores()/8)
+  make_chunks(n_x = length(control_genotypes_nest_chr$chr), chunk_size = parallel::detectCores()/8)
 }
 
 furrr::future_map2(control_genotypes_nest_chr$data,

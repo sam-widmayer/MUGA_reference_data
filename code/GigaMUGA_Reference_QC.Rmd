@@ -513,7 +513,7 @@ control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
                                     allele1 = as.factor(allele1))
                     return(control_allele_freqs)})
 control_allele_freqs_df <- Reduce(dplyr::bind_rows, control_allele_freqs)
-toc()
+
 # Result: allele frequency calls for each marker across all samples
 # i.e.
 #   marker            allele1     n  freq
@@ -635,7 +635,7 @@ ggplotly(sampleQC, tooltip = c("text","y"))
 We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes.
 
 ```{r Filtering to Chr X and Y Markers}
-## Reading in genotype intensities
+
 plan(multisession, workers = detectCores())
 make_chunks <- furrr:::make_chunks
 if(detectCores() > length(control_genotype_files)){
@@ -644,15 +644,14 @@ if(detectCores() > length(control_genotype_files)){
   make_chunks(n_x = length(control_genotype_files), chunk_size = detectCores()/8)
 }
 
-
+## Reading in genotype intensities
 long_XY_intensities <- furrr::future_map(.x = control_genotype_files, 
                                          .f = function(x){
                                           chr_geno <- vroom::vroom(paste0("../data/GigaMUGA/",x),delim = ",")
                                           ints <- chr_geno %>%
                                              dplyr::left_join(., gm_metadata) %>%
                                              dplyr::filter(chr %in% c("X","Y"))
-                                          return(ints)
-                                         }) %>% Reduce(dplyr::bind_rows,.)
+                                          return(ints)}) %>% Reduce(dplyr::bind_rows,.)
 
 
 # Expected output
@@ -908,7 +907,7 @@ Xchr.int <- flagged_XY_intensities %>%
   dplyr::filter(marker_flag != "FLAG",
                 chr == "X") %>%
   dplyr::mutate(x.chr.int = X + Y,
-                genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
+                genotype = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
   dplyr::group_by(sample_id, high_missing_sample) %>%
   dplyr::summarise(mean.x.chr.int = mean(x.chr.int))
 # Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
@@ -926,7 +925,7 @@ Xchr.int <- flagged_XY_intensities %>%
 Ychr.int <- flagged_XY_intensities %>%
   dplyr::ungroup() %>%
   dplyr::filter(chr == "Y") %>% # every marker on the Y chromosome was a flagged marker...so for the purposes of sexing I tried using the bad markers anyways
-  dplyr::mutate(genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
+  dplyr::mutate(allele1 = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
   dplyr::group_by(sample_id, high_missing_sample) %>%
   dplyr::summarise(mean.y.int = mean(Y))
 # Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
@@ -948,24 +947,24 @@ sex.chr.intensities <- Xchr.int %>%
                                                  mean.x.chr.int > 0.9 ~ "f",
                                                  TRUE ~ "unknown"))
 
-het_counts <- flagged_XY_intensities %>%
-  dplyr::ungroup() %>%
-  dplyr::filter(marker_flag == "FLAG") %>%
-  dplyr::mutate(genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
-  dplyr::filter(genotype != "N") %>%
-  dplyr::mutate(alt_genotype = dplyr::if_else(genotype == "H", "het", "no_het")) %>%
-  dplyr::left_join(., sex.chr.intensities %>% dplyr::select(sample_id, predicted.sex)) %>%
-  dplyr::group_by(sample_id, predicted.sex, chr, alt_genotype) %>%
-  dplyr::count() %>%
-  tidyr::pivot_wider(names_from = alt_genotype, values_from = n)
-
-het_counts[is.na(het_counts)] <- 0
-het_rate_df <- het_counts %>%
-  dplyr::mutate(het_rate = het/(het+no_het))
-remainder <- het_rate_df %>%
-  dplyr::filter(chr == "Y",
-                het_rate > 0.3,
-                predicted.sex == "unknown")
+# het_counts <- flagged_XY_intensities %>%
+#   dplyr::ungroup() %>%
+#   dplyr::filter(marker_flag == "FLAG") %>%
+#   dplyr::mutate(genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
+#   dplyr::filter(genotype != "N") %>%
+#   dplyr::mutate(alt_genotype = dplyr::if_else(genotype == "H", "het", "no_het")) %>%
+#   dplyr::left_join(., sex.chr.intensities %>% dplyr::select(sample_id, predicted.sex)) %>%
+#   dplyr::group_by(sample_id, predicted.sex, chr, alt_genotype) %>%
+#   dplyr::count() %>%
+#   tidyr::pivot_wider(names_from = alt_genotype, values_from = n)
+# 
+# het_counts[is.na(het_counts)] <- 0
+# het_rate_df <- het_counts %>%
+#   dplyr::mutate(het_rate = het/(het+no_het))
+# remainder <- het_rate_df %>%
+#   dplyr::filter(chr == "Y",
+#                 het_rate > 0.3,
+#                 predicted.sex == "unknown")
 
 
 
@@ -982,14 +981,14 @@ ggplotly(mean.x.intensities.by.sex.plot,
          tooltip = c("text","label"))
 
 
-het_rate_df_plot <- ggplot(het_rate_df, mapping = aes(x = predicted.sex, 
-                                                      y = het_rate,
-                                                      label = sample_id)) + 
-  geom_jitter() + 
-  facet_grid(.~chr) + 
-  QCtheme
-
-ggplotly(het_rate_df_plot)
+# het_rate_df_plot <- ggplot(het_rate_df, mapping = aes(x = predicted.sex, 
+#                                                       y = het_rate,
+#                                                       label = sample_id)) + 
+#   geom_jitter() + 
+#   facet_grid(.~chr) + 
+#   QCtheme
+# 
+# ggplotly(het_rate_df_plot)
 ```
 
 Because the split between inferred sexes of samples was so distinct, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
