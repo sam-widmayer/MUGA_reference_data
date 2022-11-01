@@ -57,7 +57,7 @@ above.cutoff <- no.calls %>%
 ## Calculating the number of missing markers for each sample
 n.calls.strains <- furrr::future_map(control_genotype_files,
                                      function(x){
-                                       chr_geno <- vroom::vroom(paste0("../data/GigaMUGA/",x),delim = ",")
+                                       chr_geno <- read.fst(paste0("data/GigaMUGA/",x))
                                        sample_Ns <- chr_geno %>%
                                          dplyr::group_by(sample_id, allele1) %>%
                                          dplyr::count() %>% 
@@ -83,4 +83,4 @@ n.calls.strains.df <- n.calls.strains %>%
 # 5       8034 11888m7081     
 # 6       8420 129P1/ReJm35858
 
-save(control_allele_freqs_df, n.calls.strains.df, file = "Marker_QC.RData")
+save(control_allele_freqs_df, n.calls.strains.df, file = "data/GigaMUGA/Marker_QC.RData")
