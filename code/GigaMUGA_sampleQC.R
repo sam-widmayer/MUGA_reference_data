@@ -83,4 +83,12 @@ n.calls.strains.df <- n.calls.strains %>%
 # 5       8034 11888m7081     
 # 6       8420 129P1/ReJm35858
 
-save(control_allele_freqs_df, n.calls.strains.df, file = "data/GigaMUGA/Marker_QC.RData")
+
+## Reading in probe intensities
+X.fst <- read.fst("data/GigaMUGA/gm_genos_chr_X.fst")
+Y.fst <- read.fst("data/GigaMUGA/gm_genos_chr_Y.fst")
+long_XY_intensities <- X.fst %>%
+    dplyr::bind_rows(.,Y.fst) %>%
+    dplyr::left_join(., gm_metadata)
+
+save(control_allele_freqs_df, n.calls.strains.df, long_XY_intensities, file = "data/GigaMUGA/Marker_QC.RData")
