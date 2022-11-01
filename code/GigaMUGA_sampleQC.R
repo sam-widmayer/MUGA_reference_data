@@ -17,7 +17,7 @@ control_genotype_files <- list.files("data/GigaMUGA/", pattern = "gm_genos_chr")
 # Creating parallelization plan for furrr
 plan(multisession, workers = 23)
 make_chunks <- furrr:::make_chunks
-make_chunks(n_x = 23, chunk_size = 1)
+suppressMessages(suppressMessagesmake_chunks(n_x = 23, chunk_size = 1))
 
 # Calculating frequency of each genotype for each marker
 control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
@@ -35,7 +35,7 @@ control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
                     return(control_allele_freqs)})
 control_allele_freqs_df <- Reduce(dplyr::bind_rows, control_allele_freqs)
 
-## Filtering to frequencies of missing genotypes
+## Filtering to markers with missing genotypes
 no.calls <- control_allele_freqs_df %>%
   dplyr::ungroup() %>%
   dplyr::filter(genotype == "N") %>%
@@ -49,9 +49,6 @@ no.calls <- control_allele_freqs_df %>%
 cutoff <- quantile(no.calls$freq, probs = seq(0,1,0.05))[[19]]
 above.cutoff <- no.calls %>%
   dplyr::filter(freq > cutoff)
-
-
-
 
 
 ## Calculating the number of missing markers for each sample
@@ -83,6 +80,9 @@ n.calls.strains.df <- n.calls.strains %>%
 # 5       8034 11888m7081     
 # 6       8420 129P1/ReJm35858
 
+bad_sample_cutoff <- quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20]
+high.n.samples <- n.calls.strains.df %>%
+  dplyr::filter(n.no.calls > bad_sample_cutoff)
 
 ## Reading in probe intensities
 X.fst <- read.fst("data/GigaMUGA/gm_genos_chr_X.fst")
@@ -91,4 +91,6 @@ long_XY_intensities <- X.fst %>%
     dplyr::bind_rows(.,Y.fst) %>%
     dplyr::left_join(., gm_metadata)
 
-save(control_allele_freqs_df, n.calls.strains.df, long_XY_intensities, file = "data/GigaMUGA/Marker_QC.RData")
+save(control_allele_freqs_df, above.cutoff,
+    n.calls.strains.df, high.n.samples,
+    long_XY_intensities, file = "data/GigaMUGA/Marker_QC.RData")
