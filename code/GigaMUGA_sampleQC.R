@@ -23,23 +23,23 @@ make_chunks(n_x = 23, chunk_size = 1)
 control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
                     chr_geno <- read.fst(paste0("data/GigaMUGA/",x))
                     control_allele_freqs <- chr_geno %>%
-                      dplyr::group_by(marker, allele1) %>%
+                      dplyr::group_by(marker, genotype) %>%
                       dplyr::count() %>% 
                       dplyr::ungroup() %>%
                       dplyr::group_by(marker) %>%
-                      dplyr::mutate(allele1 = if_else(condition = allele1 == "-", 
+                      dplyr::mutate(genotype = if_else(condition = genotype == "-", 
                                                        true = "N", 
-                                                       false = as.character(allele1)),
+                                                       false = as.character(genotype)),
                                     freq = round(n/sum(n), 3),
-                                    allele1 = as.factor(allele1))
+                                    genotype = as.factor(genotype))
                     return(control_allele_freqs)})
 control_allele_freqs_df <- Reduce(dplyr::bind_rows, control_allele_freqs)
 
 ## Filtering to frequencies of missing genotypes
 no.calls <- control_allele_freqs_df %>%
   dplyr::ungroup() %>%
-  dplyr::filter(allele1 == "N") %>%
-  tidyr::pivot_wider(names_from = allele1, 
+  dplyr::filter(genotype == "N") %>%
+  tidyr::pivot_wider(names_from = genotype, 
                      values_from = n) %>%
   dplyr::left_join(., gm_metadata) %>%
   dplyr::select(marker, chr, bp_grcm39, freq) %>%
@@ -59,14 +59,14 @@ n.calls.strains <- furrr::future_map(control_genotype_files,
                                      function(x){
                                        chr_geno <- read.fst(paste0("data/GigaMUGA/",x))
                                        sample_Ns <- chr_geno %>%
-                                         dplyr::group_by(sample_id, allele1) %>%
+                                         dplyr::group_by(sample_id, genotype) %>%
                                          dplyr::count() %>% 
                                          dplyr::ungroup() %>%
                                          dplyr::group_by(sample_id) %>%
-                                         dplyr::mutate(allele1 = if_else(condition = allele1 == "-", 
+                                         dplyr::mutate(genotype = if_else(condition = genotype == "-", 
                                                                          true = "N", 
-                                                                         false = as.character(allele1))) %>%
-                                         dplyr::filter(allele1 == "N")
+                                                                         false = as.character(genotype))) %>%
+                                         dplyr::filter(genotype == "N")
                                        return(sample_Ns)}) %>% 
   Reduce(dplyr::bind_rows, .)
   
