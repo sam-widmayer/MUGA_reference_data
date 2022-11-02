@@ -52,20 +52,12 @@ control_genotypes_selected_chr <- read.fst("data/GigaMUGA/GigaMUGA_control_genot
   dplyr::filter(chr == args[1])
 
 noNIH <- control_genotypes_selected_chr %>%
-  dplyr::mutate(flag = dplyr::if_else(stringr::str_detect(string = sample_id, pattern = "NIH_"),true = "T",false = "F")) %>%
+  dplyr::mutate(flag = dplyr::case_when(stringr::str_detect(string = sample_id, pattern = "NIH_") ~ "T",
+                                        stringr::str_detect(string = sample_id, pattern = "DO") ~ "T",
+                                        stringr::str_detect(string = stringr::str_sub(sample_id, start = 1, end = 3), pattern = "129") ~ "F",
+                                        stringr::str_detect(string = stringr::str_sub(sample_id, start = 1, end = 1), pattern = "[:digit:]") ~ "T",
+                                        TRUE ~ "F"))                                              
   dplyr::filter(flag == "F") %>%
   dplyr::select(-flag)
 
 writeChrGenos(x = noNIH, y = args[1])
-# 
-# future::plan(multisession, workers = parallel::detectCores())
-# make_chunks <- furrr:::make_chunks
-# if(detectCores() > length(control_genotypes_nest_chr$chr)){
-#   make_chunks(n_x = length(control_genotypes_nest_chr$chr), n_workers = parallel::detectCores())
-# } else {
-#   make_chunks(n_x = length(control_genotypes_nest_chr$chr), chunk_size = parallel::detectCores()/8)
-# }
-
-# furrr::future_map2(control_genotypes_nest_chr$data,
-#                    control_genotypes_nest_chr$chr,
-#                    writeChrGenos)
