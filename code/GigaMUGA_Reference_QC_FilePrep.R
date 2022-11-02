@@ -56,8 +56,8 @@ noNIH <- control_genotypes_selected_chr %>%
                                         stringr::str_detect(string = sample_id, pattern = "DO") ~ "T",
                                         stringr::str_detect(string = stringr::str_sub(sample_id, start = 1, end = 3), pattern = "129") ~ "F",
                                         stringr::str_detect(string = stringr::str_sub(sample_id, start = 1, end = 1), pattern = "[:digit:]") ~ "T",
-                                        TRUE ~ "F"))                                              
-  dplyr::filter(flag == "F") %>%
-  dplyr::select(-flag)
+                                        TRUE ~ "F")) %>%
+ dplyr::filter(flag == "F") %>%
+ dplyr::select(-flag)
 
 writeChrGenos(x = noNIH, y = args[1])
