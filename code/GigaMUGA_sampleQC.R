@@ -281,6 +281,15 @@ sex.chr.k.means.y <- cbind(sex.chr.intensities.goodsamples %>% dplyr::filter(!is
       kmeans.y$cluster)
 colnames(sex.chr.k.means.y) <- c(colnames(sex.chr.k.means.y)[-6],"y.clust")
 
+# Generating a contingency table for how each cluster paired with each sex. 
+sex.by.cluster.tab.x <- sex.chr.k.means.x %>%
+  dplyr::group_by(predicted.sex, x.clust) %>% 
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
+sex.by.cluster.tab.y <- sex.chr.k.means.y %>%
+  dplyr::group_by(predicted.sex, y.clust) %>% 
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
 
 # The most common clusters should be the two sexes, k-means doesn't always assign the same cluster name to the same sex. Therefore, the top clusters must be pulled out and assigned sexes dynamically.
 top.clusters.x <- sex.by.cluster.tab.x[1:2,] %>%
@@ -292,24 +301,13 @@ top.clusters.y <- sex.by.cluster.tab.y[1:2,] %>%
   dplyr::mutate(inferred.sex = predicted.sex) %>%
   dplyr::select(-n,-predicted.sex)
 
-# Generating a contingency table for how each cluster paired with each sex. 
-sex.by.cluster.tab.x <- sex.chr.k.means.x %>%
-  dplyr::group_by(predicted.sex, x.clust) %>% 
-  dplyr::count() %>%
-  dplyr::arrange(desc(n))
-sex.by.cluster.tab.y <- sex.chr.k.means.y %>%
-  dplyr::group_by(predicted.sex, y.clust) %>% 
-  dplyr::count() %>%
-  dplyr::arrange(desc(n))
-
+# Samples are then recoded according to the k-means assigned sexes
 reSexed.x <- sex.chr.k.means.x %>%
   dplyr::select(-predicted.sex) %>%
   dplyr::left_join(., top.clusters.x)
 reSexed.y <- sex.chr.k.means.y %>%
   dplyr::select(-predicted.sex) %>%
   dplyr::left_join(., top.clusters.y)
-
-# Samples are then recoded according to the k-means assigned sexes
 reSexed_samples <- full_join(reSexed.x, reSexed.y) %>%
   dplyr::full_join(sex.chr.intensities.goodsamples %>%
                      dplyr::select(sample_id, predicted.sex),.) %>%
