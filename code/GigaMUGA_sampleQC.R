@@ -318,9 +318,43 @@ reSexed_samples <- full_join(reSexed.x, reSexed.y) %>%
   dplyr::select(-x.clust, -y.clust) %>%
   dplyr::distinct()
 
+# Vector of founder strain names
+founder_strains <- c("A/J","C57BL/6J","129S1/SvImJ","NOD/ShiLtJ",
+                     "NZO/HILtJ","CAST/EiJ","PWK/PhJ","WSB/EiJ")
+
+reSexed_samples$rough_founder_pull <- strsplit(reSexed_samples$sample_id, split =  "_") %>%
+  purrr::map(., function(x){return(x[[1]])}) %>% 
+  unlist()
+
+founderSamples <- reSexed_samples %>%
+  dplyr::mutate(founder = dplyr::if_else(stringr::str_length(rough_founder_pull) == 2, true = "founder", false = "")) %>%
+  dplyr::filter(founder == "founder") %>%
+  dplyr::mutate(dam = str_sub(rough_founder_pull, start = 1, end = 1),
+                sire = str_sub(rough_founder_pull, start = 2, end = 2),
+                dam = dplyr::case_when(dam == "A" ~ founder_strains[1],
+                                       dam == "B" ~ founder_strains[2],
+                                       dam == "C" ~ founder_strains[3],
+                                       dam == "D" ~ founder_strains[4],
+                                       dam == "E" ~ founder_strains[5],
+                                       dam == "F" ~ founder_strains[6],
+                                       dam == "G" ~ founder_strains[7],
+                                       dam == "H" ~ founder_strains[8]),
+                sire = dplyr::case_when(sire == "A" ~ founder_strains[1],
+                                        sire == "B" ~ founder_strains[2],
+                                        sire == "C" ~ founder_strains[3],
+                                        sire == "D" ~ founder_strains[4],
+                                        sire == "E" ~ founder_strains[5],
+                                        sire == "F" ~ founder_strains[6],
+                                        sire == "G" ~ founder_strains[7],
+                                        sire == "H" ~ founder_strains[8]),
+                bg = dplyr::if_else(dam == sire, true = "INBRED", false = "CROSS")) %>%
+  dplyr::select(sample_id, inferred.sex, dam, sire, bg, predicted.sex)
+
+
 save(control_allele_freqs_df,
     n.calls.strains.df,
     long_XY_intensities,
-    predicted.sexes, file = "data/GigaMUGA/Marker_QC.RData")
+    predicted.sexes,
+    founderSamples, file = "data/GigaMUGA/GigaMUGA_QC_Results.RData")
 save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
 save(sex.chr.intensities, reSexed_samples, file = "data/GigaMUGA/sex_check_results.RData")
