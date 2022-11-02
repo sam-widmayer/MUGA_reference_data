@@ -1,5 +1,5 @@
 ---
-title: "Reference Data QC: MegaMUGA"
+title: "Reference Data QC: GigaMUGA"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -8,7 +8,7 @@ output:
     code_folding: hide
 ---
 
-# MegaMUGA Annotations
+# GigaMUGA Annotations
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
@@ -20,7 +20,6 @@ require(stringr)
 require(parallel)
 # ^ these if running on sumner
 require(data.table)
-require(multidplyr)
 require(purrr)
 require(furrr)
 require(qtl2)
@@ -470,93 +469,34 @@ findConsensusGenotypes <- function(mk, data){
     return(list(recoded, sample_new_consensus_calls, recoded_consensus_genotypes))
   }
 }
-
 ```
 
-## Reading in reference genotypes and metadata
-
-First I read in the reference sample genotypes, as well as marker annotations from an [analysis](https://github.com/kbroman/MUGAarrays) previously conducted by Karl Broman, Dan Gatti, and Belinda Cornes.
-
-```{r Reading in reference genotypes and metadata}
-
-## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
-gm_metadata <- vroom::vroom("../data/GigaMUGA/gm_uwisc_v2.csv", num_threads = detectCores())
-control_genotype_files <- list.files("../data/GigaMUGA/", pattern = "gm_genos_chr")
+## Loading in data from Sumner analyses
+```{r}
+load("../data/GigaMUGA/Marker_QC.RData")
+load("../data/GigaMUGA/bad_samples_markers.RData")
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv")
 ```
 
 ## Marker QC: Searching for missing genotype calls
 
-We searched for probes where many mice are missing genotype calls.
-
 ```{r Markers with high "N" counts among reference samples}
-
-## Calculating allele frequencies for each marker
-plan(multisession, workers = detectCores())
-make_chunks <- furrr:::make_chunks
-if(detectCores() > length(control_genotype_files)){
-  make_chunks(n_x = length(control_genotype_files), n_workers = detectCores())
-} else {
-  make_chunks(n_x = length(control_genotype_files), chunk_size = detectCores()/8)
-}
-
-control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
-                    chr_geno <- vroom::vroom(paste0("../data/GigaMUGA/",x),delim = ",")
-                    control_allele_freqs <- chr_geno %>%
-                      dplyr::group_by(marker, allele1) %>%
-                      dplyr::count() %>% 
-                      dplyr::ungroup() %>%
-                      dplyr::group_by(marker) %>%
-                      dplyr::mutate(allele1 = if_else(condition = allele1 == "-", 
-                                                       true = "N", 
-                                                       false = as.character(allele1)),
-                                    freq = round(n/sum(n), 3),
-                                    allele1 = as.factor(allele1))
-                    return(control_allele_freqs)})
-control_allele_freqs_df <- Reduce(dplyr::bind_rows, control_allele_freqs)
-
-# Result: allele frequency calls for each marker across all samples
-# i.e.
-#   marker            allele1     n  freq
-#   <chr>             <fct>   <int> <dbl>
-# 1 B6_01-011986786-S N           2 0.003
-# 2 B6_01-011986786-S C         530 0.92 
-# 3 B6_01-011986786-S T          44 0.076
-# 4 B6_01-033811444-S N           5 0.009
-# 5 B6_01-033811444-S A          50 0.087
-# 6 B6_01-033811444-S T         521 0.905
-
-
-## Filtering to markers with missing genotypes
 no.calls <- control_allele_freqs_df %>%
   dplyr::ungroup() %>%
-  dplyr::filter(allele1 == "N") %>%
-  tidyr::pivot_wider(names_from = allele1, 
+  dplyr::filter(genotype == "N") %>%
+  tidyr::pivot_wider(names_from = genotype, 
                      values_from = n) %>%
   dplyr::left_join(., gm_metadata) %>%
   dplyr::select(marker, chr, bp_grcm39, freq) %>%
   dplyr::mutate(chr = as.factor(chr))
 
-
 ## Identifying markers with missing genotypes at a frequency higher than the 95th percentile of "N" frequencies across all markers
 cutoff <- quantile(no.calls$freq, probs = seq(0,1,0.05))[[19]]
-above.cutoff <- no.calls %>%
-  dplyr::filter(freq > cutoff)
 ```
 
 Of `r length(unique(as.factor(control_allele_freqs_df$marker)))` markers, `r nrow(no.calls)` failed to genotype at least one sample, and `r nrow(above.cutoff)` markers failed to genotype at least `r cutoff*100`% of samples.
 
 ```{r Plotting no calls, echo=FALSE}
-
-# Returns a table of bad markers with all available metadata
-above.cutoff %>%
-  dplyr::left_join(.,gm_metadata) %>%
-  dplyr::mutate(chr = as.factor(chr)) %>%
-  dplyr::arrange(marker) %>%
-  DT::datatable(., filter = "top", 
-              escape = FALSE, 
-              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
-
-
 # Distribution of N frequencies across all markers. Dotted line indicates the 95th percentile of N frequencies (cutoff).
 ggplot(no.calls, mapping = aes(x = freq)) + 
   geom_histogram(bins = 100) +
@@ -574,47 +514,9 @@ ggplot(no.calls, mapping = aes(x = freq)) +
 In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains with identical names meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise. Mouse over individual samples to see the number of markers with missing genotypes for each sample.
 
 ```{r Reference samples with high missingness}
-plan(multisession, workers = detectCores())
-make_chunks <- furrr:::make_chunks
-if(detectCores() > length(control_genotype_files)){
-  make_chunks(n_x = length(control_genotype_files), n_workers = detectCores())
-} else {
-  make_chunks(n_x = length(control_genotype_files), chunk_size = detectCores()/8)
-}
-
-## Calculating the number of missing markers for each sample
-n.calls.strains <- furrr::future_map(control_genotype_files,
-                                     function(x){
-                                       chr_geno <- vroom::vroom(paste0("../data/GigaMUGA/",x),delim = ",")
-                                       sample_Ns <- chr_geno %>%
-                                         dplyr::group_by(sample_id, allele1) %>%
-                                         dplyr::count() %>% 
-                                         dplyr::ungroup() %>%
-                                         dplyr::group_by(sample_id) %>%
-                                         dplyr::mutate(allele1 = if_else(condition = allele1 == "-", 
-                                                                         true = "N", 
-                                                                         false = as.character(allele1))) %>%
-                                         dplyr::filter(allele1 == "N")
-                                       return(sample_Ns)}) %>% 
-  Reduce(dplyr::bind_rows, .)
-  
-n.calls.strains.df <- n.calls.strains %>%
-  dplyr::group_by(sample_id) %>%
-  dplyr::summarise(n.no.calls = sum(n)) %>%
-  dplyr::select(n.no.calls, sample_id)
-#   n.no.calls sample_id      
-#        <int> <chr>          
-# 1       8088 10570m4381     
-# 2       8322 11531m8014     
-# 3       8314 11666m45109    
-# 4       8158 11679m4874     
-# 5       8034 11888m7081     
-# 6       8420 129P1/ReJm35858
 
 ## Interactive plot of the number of missing genotypes for each sample.
-bad_sample_cutoff <- quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20]
-high.n.samples <- n.calls.strains.df %>%
-  dplyr::filter(n.no.calls > bad_sample_cutoff)
+bad_sample_cutoff <- quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20]\
 sampleQC <- ggplot(n.calls.strains.df, 
                    mapping = aes(x = reorder(sample_id,n.no.calls), 
                                  y = n.no.calls,
@@ -632,42 +534,7 @@ ggplotly(sampleQC, tooltip = c("text","y"))
 
 ### Validating sex of reference samples
 
-We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes.
-
-```{r Filtering to Chr X and Y Markers}
-
-plan(multisession, workers = detectCores())
-make_chunks <- furrr:::make_chunks
-if(detectCores() > length(control_genotype_files)){
-  make_chunks(n_x = length(control_genotype_files), n_workers = detectCores())
-} else {
-  make_chunks(n_x = length(control_genotype_files), chunk_size = detectCores()/8)
-}
-
-## Reading in genotype intensities
-long_XY_intensities <- furrr::future_map(.x = control_genotype_files, 
-                                         .f = function(x){
-                                          chr_geno <- vroom::vroom(paste0("../data/GigaMUGA/",x),delim = ",")
-                                          ints <- chr_geno %>%
-                                             dplyr::left_join(., gm_metadata) %>%
-                                             dplyr::filter(chr %in% c("X","Y"))
-                                          return(ints)}) %>% Reduce(dplyr::bind_rows,.)
-
-
-# Expected output
-#   marker     allele1 allele2 sample_id      X     Y `GC Score` Theta `X Raw` `Y Raw`     R bp_mm10 bp_grcm39 cM_cox strand snp   unique unmapped
-#   <chr>      <chr>   <chr>   <chr>      <dbl> <dbl>      <dbl> <dbl>   <dbl>   <dbl> <dbl>   <dbl>     <dbl>  <dbl> <chr>  <chr> <lgl>  <lgl>   
-# 1 B6_rs6368… A       A       NIH_TVD_Y… 1.19  0.015      0.824 0.008   10963     220 1.21   5.79e7  56912987  30.7  minus  AG    TRUE   FALSE   
-# 2 B6_X-0074… G       G       NIH_TVD_Y… 0.026 0.726      0.884 0.977     441    2848 0.752  7.89e6   7757203   2.23 plus   GA    TRUE   FALSE   
-# 3 B6_X-0142… C       C       NIH_TVD_Y… 0.025 0.824      0.925 0.981     563    3415 0.849  1.47e7  14537051   8.28 plus   CT    TRUE   FALSE   
-# 4 B6_X-0392… G       G       NIH_TVD_Y… 0.01  0.724      0.906 0.991     299    2841 0.735  4.19e7  40974138  21.7  minus  GA    TRUE   FALSE   
-# 5 B6_X-0783… C       C       NIH_TVD_Y… 0.018 0.816      0.930 0.986     376    3190 0.834  8.11e7  80131410  36.8  minus  CA    TRUE   FALSE   
-# 6 B6_X-0978… G       G       NIH_TVD_Y… 0.104 1.10       0.788 0.94     1172    4267 1.20   1.01e8  99710707  42.2  minus  GA    TRUE   FALSE   
-# # … with 3 more variables: probe <chr>, strand_flipped <lgl>, chr <chr>
-
-```
-
-Then we flagged markers with high missingness across all samples, as well as samples with high missingness among all markers.
+We next validated the sexes of each sample using sex chromosome probe intensities. We paired up probe intensities, joined available metadata, and filtered down to only markers covering the X and Y chromosomes. Then we flagged markers with high missingness across all samples, as well as samples with high missingness among all markers.
 
 ```{r Flagging "low-quality" markers and samples}
 
@@ -683,204 +550,10 @@ flagged_XY_intensities <- long_XY_intensities %>%
 
 The first round of inferring predicted sexes used a rough search of the sample name for expected nomenclature convention, which includes a sex denotation.
 
-```{r Preliminary sex prediction, eval=FALSE, include=FALSE}
-
-## First round of predicted sex inference
-## Input: flagged XY intensities
-# prelim.predicted.sexes <- flagged_XY_intensities %>%
-#   dplyr::mutate(bg = dplyr::case_when(stringr::str_detect(string = sample, 
-#                                                           pattern = "F1") == TRUE ~ "F1",
-#                                       TRUE ~ "unknown"),
-#                 predicted.sex = dplyr::case_when(stringr::str_detect(string = sample, 
-#                                                           pattern = "F1f") == TRUE ~ "f",
-#                                       stringr::str_detect(string = sample, 
-#                                                           pattern = "F1m") == TRUE ~ "m",
-#                                       TRUE ~ "unknown"))
-
-# ## Filtering down to samples without preliminary sex predictions
-# unknown <- prelim.predicted.sexes %>%
-#   dplyr::filter(predicted.sex == "unknown")
-
-## Using regex searching of sample IDs to deduce the sex of each sample
-
-###########################################################
-## Key processes and expected outputs at each iteration: ##
-###########################################################
-
-#####################################################################
-## 1) Extracting the a substring of X digits into the sample name. ##
-#####################################################################
-# mouse.id.X = stringr::str_sub(sample, -X)
-# i.e.)
-# unknown %>% 
-#       dplyr::mutate(mouse.id.3 = stringr::str_sub(sample, -3)) %>% 
-#       dplyr::select(sample, mouse.id.3) %>% 
-#       head(10)
-#                       sample mouse.id.3
-# 1  X.CAST.EiJxPWK.PhJ.F10123        123
-# 2                 X017.FH.F1        .F1
-# 3        X124S4.SvJaeJm39510        510
-# 4           X129P1.ReJm35858        858
-# 5             X129P2.OlaHsdm        sdm
-# 6           X129P2.OlaHsdm.1        m.1
-# 7             X129P3.Jm37959        959
-# 8              X129S1.SvImJf        mJf
-# 9            X129S1.SvImJf.1        f.1
-# 10         X129S1.SvImJf0827        827
-
-#####################################################################################
-## 2) Assigning the predicted sex based on expected mouse nomenclature convention. ##
-#####################################################################################
-# predicted.sex.X = dplyr::case_when(stringr::str_sub(mouse.id.X, 1, 1) %in% c("m","M") ~ "m", stringr::str_sub(mouse.id.X, 1, 1) %in% c("f","F") ~ "f", TRUE ~ "unknown")
-# i.e.)
-# unknown %>% 
-#         dplyr::mutate(mouse.id.5= stringr::str_sub(sample, -5),
-#                       predicted.sex.5 = 
-#                     dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m", 
-#                                      stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f", 
-# `                                    TRUE ~ "unknown")) %>% 
-#         dplyr::select(sample, mouse.id.5, predicted.sex.5) %>% head(14)
-#                       sample mouse.id.5 predicted.sex.5
-# 1  X.CAST.EiJxPWK.PhJ.F10123      10123         unknown
-# 2                 X017.FH.F1      FH.F1               f
-# 3        X124S4.SvJaeJm39510      39510         unknown
-# 4           X129P1.ReJm35858      35858         unknown
-# 5             X129P2.OlaHsdm      aHsdm         unknown
-# 6           X129P2.OlaHsdm.1      sdm.1         unknown
-# 7             X129P3.Jm37959      37959         unknown
-# 8              X129S1.SvImJf      vImJf         unknown
-# 9            X129S1.SvImJf.1      mJf.1               m
-# 10         X129S1.SvImJf0827      f0827               f
-# 11       X129S1.SvImJf0827.1      827.1         unknown
-# 12             X129S1.SvImJm      vImJm         unknown
-# 13           X129S1.SvImJm.1      mJm.1               m
-# 14         X129S1.SvImJm1314      m1314               m
-
-##############################################################################################
-# 3) Inferring the strain background by removing the mouse id from the sample name when a sex is predicted. In certain cases, symbols had to be extracted prior to sex and background inference.
-##############################################################################################
-# bg = if_else(condition = (predicted.sex.X == "m" | predicted.sex.X == "f"), 
-#                           true = str_replace(string = bg, 
-#                                              pattern = mouse.id.X, 
-#                                              replacement = ""), 
-#                           false = bg)
-# i.e.) 
-# unknown %>% 
-#     dplyr::mutate(mouse.id.5 = stringr::str_sub(sample, -5), 
-#                   mouse.id.5 = stringr::str_replace(string = mouse.id.5, 
-#                                                     pattern = "[:symbol:]", 
-#                                                     replacement = ""),
-#                   predicted.sex.5 = dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m",
-#                                                      stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f",
-#                                                      TRUE ~ "unknown"),
-#                   bg = if_else(condition = (predicted.sex.5 == "m" | predicted.sex.5 == "f"),
-#                               true = str_replace(string = bg, 
-#                                                  pattern = mouse.id.5, 
-#                                                  replacement = ""), 
-#                               false = bg)) %>% 
-#     dplyr::select(sample, mouse.id.5, predicted.sex.5, bg) %>% head(14)
-#                       sample mouse.id.5 predicted.sex.5                  bg
-# 1  X.CAST.EiJxPWK.PhJ.F10123      10123         unknown                  F1
-# 2                 X017.FH.F1      FH.F1               f                  F1
-# 3        X124S4.SvJaeJm39510      39510         unknown X124S4.SvJaeJm39510
-# 4           X129P1.ReJm35858      35858         unknown    X129P1.ReJm35858
-# 5             X129P2.OlaHsdm      aHsdm         unknown      X129P2.OlaHsdm
-# 6           X129P2.OlaHsdm.1      sdm.1         unknown    X129P2.OlaHsdm.1
-# 7             X129P3.Jm37959      37959         unknown      X129P3.Jm37959
-# 8              X129S1.SvImJf      vImJf         unknown       X129S1.SvImJf
-# 9            X129S1.SvImJf.1      mJf.1               m          X129S1.SvI
-# 10         X129S1.SvImJf0827      f0827               f        X129S1.SvImJ
-# 11       X129S1.SvImJf0827.1      827.1         unknown X129S1.SvImJf0827.1
-# 12             X129S1.SvImJm      vImJm         unknown       X129S1.SvImJm
-# 13           X129S1.SvImJm.1      mJm.1               m          X129S1.SvI
-# 14         X129S1.SvImJm1314      m1314               m        X129S1.SvImJ
-
-digit.trim <- flagged_XY_intensities %>% 
-  # One character
-  dplyr::mutate(mouse.id.1 = stringr::str_sub(sample_id, -1),
-                predicted.sex.1 = dplyr::case_when(stringr::str_sub(mouse.id.1, 1, 1) %in% c("m","M") ~ "m",
-                                                   stringr::str_sub(mouse.id.1, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Three characters
-                mouse.id.3= stringr::str_sub(sample_id, -3),
-                predicted.sex.3 = dplyr::case_when(stringr::str_sub(mouse.id.3, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.3, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Four characters
-                mouse.id.4 = stringr::str_sub(sample_id, -4),
-                predicted.sex.4 = dplyr::case_when(stringr::str_sub(mouse.id.4, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.4, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Five characters
-                mouse.id.5 = stringr::str_sub(sample_id, -5),
-                mouse.id.5 = stringr::str_replace(string = mouse.id.5,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:symbol:]", 
-                                                  replacement = ""),
-                predicted.sex.5 = dplyr::case_when(stringr::str_sub(mouse.id.5, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.5, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Six characters
-                mouse.id.6 = stringr::str_sub(sample_id, -6),
-                mouse.id.6 = stringr::str_replace(string = mouse.id.6,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:punct:]", 
-                                                  replacement = ""),
-                mouse.id.6 = stringr::str_replace(string = mouse.id.6,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:symbol:]", 
-                                                  replacement = ""),
-                predicted.sex.6 = dplyr::case_when(stringr::str_sub(mouse.id.6, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.6, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Seven characters
-                mouse.id.7 = stringr::str_sub(sample_id, -7),
-                mouse.id.7 = stringr::str_replace(string = mouse.id.7,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:punct:]", 
-                                                  replacement = ""),
-                mouse.id.7 = stringr::str_replace(string = mouse.id.7,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:symbol:]", 
-                                                  replacement = ""),
-                predicted.sex.7 = dplyr::case_when(stringr::str_sub(mouse.id.7, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.7, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown"),
-                # Eight characters
-                mouse.id.8 = stringr::str_sub(sample_id, -8),
-                mouse.id.8 = stringr::str_replace(string = mouse.id.8,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:punct:]", 
-                                                  replacement = ""),
-                mouse.id.8 = stringr::str_replace(string = mouse.id.8,  ## a couple symbols in these ids mess up the regex search
-                                                  pattern = "[:symbol:]", 
-                                                  replacement = ""),
-                predicted.sex.8 = dplyr::case_when(stringr::str_sub(mouse.id.8, 1, 1) %in% c("m","M") ~ "m",
-                                                 stringr::str_sub(mouse.id.8, 1, 1) %in% c("f","F") ~ "f",
-                                                 TRUE ~ "unknown")) %>%
-  dplyr::mutate(predicted.sex = dplyr::case_when(predicted.sex.1 == "m" ~ "m", 
-                                                 predicted.sex.3 == "m" ~ "m",
-                                                 predicted.sex.4 == "m" ~ "m",
-                                                 predicted.sex.5 == "m" ~ "m",
-                                                 predicted.sex.6 == "m" ~ "m",
-                                                 predicted.sex.7 == "m" ~ "m",
-                                                 predicted.sex.8 == "m" ~ "m",
-                                                 
-                                                 predicted.sex.1 == "f" ~ "f", 
-                                                 predicted.sex.3 == "f" ~ "f",
-                                                 predicted.sex.4 == "f" ~ "f",
-                                                 predicted.sex.5 == "f" ~ "f",
-                                                 predicted.sex.6 == "f" ~ "f",
-                                                 predicted.sex.7 == "f" ~ "f",
-                                                 predicted.sex.8 == "f" ~ "f",
-                                                 TRUE ~ "unknown"))
-digit.trim %>%
-  dplyr::distinct(sample_id, predicted.sex) %>% View()
-
-
-# Removing previously "unknown" samples from initial results and binding newly inferred samples
-predicted.sexes.strings <- prelim.predicted.sexes %>%
-  dplyr::filter(predicted.sex != "unknown") %>%
-  dplyr::bind_rows(.,digit.trim)
+```{r Preliminary sex prediction}
 
 ## Taking the first marker as a sample and tabulating the number of samples for each predicted sex
-predicted.sex.table <- predicted.sexes.strings %>%
-  dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
-  dplyr::select(sample_id, predicted.sex, bg) %>%
+predicted.sex.table <- predicted.sexes %>%
   dplyr::group_by(predicted.sex) %>%
   dplyr::count() 
 
@@ -890,10 +563,8 @@ This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == 
 
 ```{r Predicted sex table, eval=FALSE, include=FALSE}
 # Table of samples for which sex could not be predicted from sample name alone. Using one marker is fine as an example as the sample info for each marker is identical.
-predicted.sexes.strings %>%
-  dplyr::filter(predicted.sex == "unknown",
-                marker == predicted.sexes.strings$marker[[1]]) %>%
-  dplyr::select(sample_id, bg)
+predicted.sexes %>%
+  dplyr::filter(predicted.sex == "unknown")
 ```
 
 After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information. In many cases, pulling substrings of sample names as the sex of the sample was too sensitive and misclassified samples.
@@ -943,9 +614,8 @@ Ychr.int <- flagged_XY_intensities %>%
 # Column binding the two intensities if the sample information matches
 sex.chr.intensities <- Xchr.int %>%
   dplyr::full_join(., Ychr.int) %>%
-  dplyr::mutate(predicted.sex = dplyr::case_when(mean.y.int > 0.2 ~ "m",
-                                                 mean.x.chr.int > 0.9 ~ "f",
-                                                 TRUE ~ "unknown"))
+  dplyr::left_join(., predicted.sexes) %>%
+  dplyr::filter(high_missing_sample == "")
 
 # het_counts <- flagged_XY_intensities %>%
 #   dplyr::ungroup() %>%
@@ -954,7 +624,7 @@ sex.chr.intensities <- Xchr.int %>%
 #   dplyr::filter(genotype != "N") %>%
 #   dplyr::mutate(alt_genotype = dplyr::if_else(genotype == "H", "het", "no_het")) %>%
 #   dplyr::left_join(., sex.chr.intensities %>% dplyr::select(sample_id, predicted.sex)) %>%
-#   dplyr::group_by(sample_id, predicted.sex, chr, alt_genotype) %>%
+#   dplyr::group_by(sample_id, predicted.sex, chr, alt_genotype, high_missing_sample) %>%
 #   dplyr::count() %>%
 #   tidyr::pivot_wider(names_from = alt_genotype, values_from = n)
 # 
@@ -981,14 +651,7 @@ ggplotly(mean.x.intensities.by.sex.plot,
          tooltip = c("text","label"))
 
 
-# het_rate_df_plot <- ggplot(het_rate_df, mapping = aes(x = predicted.sex, 
-#                                                       y = het_rate,
-#                                                       label = sample_id)) + 
-#   geom_jitter() + 
-#   facet_grid(.~chr) + 
-#   QCtheme
-# 
-# ggplotly(het_rate_df_plot)
+
 ```
 
 Because the split between inferred sexes of samples was so distinct, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
