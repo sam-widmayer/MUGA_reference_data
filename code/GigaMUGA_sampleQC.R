@@ -201,8 +201,128 @@ long_XY_intensities <- X.fst %>%
     dplyr::bind_rows(.,Y.fst) %>%
     dplyr::left_join(., gm_metadata)
 
+## Flagging markers and samples based on previous QC steps
+flagged_XY_intensities <- long_XY_intensities %>%
+  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
+                                             true = "FLAG",
+                                             false = "")) %>%
+  dplyr::mutate(high_missing_sample = dplyr::if_else(condition = sample_id %in% high.n.samples$sample_id,
+                                                     true = "FLAG",
+                                                     false = ""))
+
+# Input: Sex chromosome probe intensities for each marker with 1) marker metdata, 2) marker and sample flags, 3) background and sex predictions
+Xchr.int <- flagged_XY_intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(marker_flag != "FLAG",
+                chr == "X") %>%
+  dplyr::mutate(x.chr.int = X + Y,
+                genotype = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
+  dplyr::group_by(sample_id, high_missing_sample) %>%
+  dplyr::summarise(mean.x.chr.int = mean(x.chr.int))
+# Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
+
+#   sample_id       high_missing_sample mean.x.chr.int
+#   <chr>           <chr>                        <dbl>
+# 1 10570m4381      ""                           0.780
+# 2 11531m8014      ""                           0.774
+# 3 11666m45109     ""                           0.751
+# 4 11679m4874      ""                           0.783
+# 5 11888m7081      ""                           0.786
+# 6 129P1/ReJm35858 ""                           0.822
+
+
+Ychr.int <- flagged_XY_intensities %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(chr == "Y") %>% # every marker on the Y chromosome was a flagged marker...so for the purposes of sexing I tried using the bad markers anyways
+  dplyr::mutate(allele1 = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
+  dplyr::group_by(sample_id, high_missing_sample) %>%
+  dplyr::summarise(mean.y.int = mean(Y))
+# Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
+
+#   sample_id       high_missing_sample mean.y.int
+#   <chr>           <chr>                    <dbl>
+# 1 10570m4381      ""                       0.368
+# 2 11531m8014      ""                       0.351
+# 3 11666m45109     ""                       0.351
+# 4 11679m4874      ""                       0.359
+# 5 11888m7081      ""                       0.355
+# 6 129P1/ReJm35858 ""                       0.390
+
+
+# Column binding the two intensities if the sample information matches
+sex.chr.intensities <- Xchr.int %>%
+  dplyr::full_join(., Ychr.int) %>%
+  dplyr::left_join(., predicted.sexes) 
+  # dplyr::filter(high_missing_sample == "")
+
+# Clear visual clustering of samples motivated us to use a rough clustering method to quickly assign groups to samples based on X and Y chromsome probe intensities. K-means clustering is below supplying two clusters for each sex.
+# Inputs: 
+# 1) Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers
+# 2) Sample-averaged y-channel probe intensities for all chromosome Y markers
+sex.chr.intensities.goodsamples <- sex.chr.intensities %>%
+  dplyr::filter(high_missing_sample == "")
+kmeans.x <- sex.chr.intensities.goodsamples %>%
+  dplyr::ungroup() %>%
+  dplyr::select(mean.x.chr.int) %>%
+  dplyr::filter(!is.na(mean.x.chr.int)) %>%
+  kmeans(., centers = 2)
+kmeans.y <- sex.chr.intensities.goodsamples %>%
+  dplyr::ungroup() %>%
+  dplyr::select(mean.y.int) %>%
+  dplyr::filter(!is.na(mean.y.int)) %>%
+  kmeans(., centers = 2)
+
+# Joining each sample's cluster assignment to the sample-averaged intensity metrics
+sex.chr.k.means.x <- cbind(sex.chr.intensities.goodsamples %>% dplyr::filter(!is.na(mean.x.chr.int)), 
+      kmeans.x$cluster)
+colnames(sex.chr.k.means.x) <- c(colnames(sex.chr.k.means.x)[-6],"x.clust") 
+
+sex.chr.k.means.y <- cbind(sex.chr.intensities.goodsamples %>% dplyr::filter(!is.na(mean.y.int)), 
+      kmeans.y$cluster)
+colnames(sex.chr.k.means.y) <- c(colnames(sex.chr.k.means.y)[-6],"y.clust")
+
+
+# The most common clusters should be the two sexes, k-means doesn't always assign the same cluster name to the same sex. Therefore, the top clusters must be pulled out and assigned sexes dynamically.
+top.clusters.x <- sex.by.cluster.tab.x[1:2,] %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(inferred.sex = predicted.sex) %>%
+  dplyr::select(-n,-predicted.sex)
+top.clusters.y <- sex.by.cluster.tab.y[1:2,] %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(inferred.sex = predicted.sex) %>%
+  dplyr::select(-n,-predicted.sex)
+
+# Generating a contingency table for how each cluster paired with each sex. 
+sex.by.cluster.tab.x <- sex.chr.k.means.x %>%
+  dplyr::group_by(predicted.sex, x.clust) %>% 
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
+sex.by.cluster.tab.y <- sex.chr.k.means.y %>%
+  dplyr::group_by(predicted.sex, y.clust) %>% 
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
+
+reSexed.x <- sex.chr.k.means.x %>%
+  dplyr::select(-predicted.sex) %>%
+  dplyr::left_join(., top.clusters.x)
+reSexed.y <- sex.chr.k.means.y %>%
+  dplyr::select(-predicted.sex) %>%
+  dplyr::left_join(., top.clusters.y)
+
+# Samples are then recoded according to the k-means assigned sexes
+reSexed_samples <- full_join(reSexed.x, reSexed.y) %>%
+  dplyr::full_join(sex.chr.intensities.goodsamples %>%
+                     dplyr::select(sample_id, predicted.sex),.) %>%
+                     # This sample was clustered differently based on X and Y but is labeled with f
+  dplyr::mutate(inferred.sex = dplyr::case_when(sample_id == "8049x8046f5" ~ "f",
+                                                is.na(inferred.sex) ~ predicted.sex, 
+                                                !is.na(inferred.sex) ~ inferred.sex)) %>%
+  dplyr::select(-x.clust, -y.clust) %>%
+  dplyr::distinct()
 
 save(control_allele_freqs_df,
     n.calls.strains.df,
-    long_XY_intensities, predicted.sexes, file = "data/GigaMUGA/Marker_QC.RData")
+    long_XY_intensities,
+    predicted.sexes, file = "data/GigaMUGA/Marker_QC.RData")
 save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
+save(reSexed_samples, file = "data/GigaMUGA/sex_check_results.RData")
