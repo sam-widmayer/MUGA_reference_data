@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J GM_QC_Test
+#SBATCH -J GM_SampleQC
 #SBATCH --mem 100GB
 #SBATCH -t 4:00:00
 
