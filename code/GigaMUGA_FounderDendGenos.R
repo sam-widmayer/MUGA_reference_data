@@ -30,21 +30,22 @@ writeWideChrGenos <- function(x,y){
     fst::write.fst(x, path = paste0("data/GigaMUGA/gm_widegenos_chr_",y,".fst"))
 }
 
-load("/data/GigaMUGA/Marker_QC.RData")
-load("/data/GigaMUGA/bad_samples_markers.RData")
+load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
+load("data/GigaMUGA/bad_samples_markers.RData")
 
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
                             progress = T)
 print(paste("Writing wide genotype file for chromosome",args[1]))
 
 
-wide_chr_genos <- read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".fst"))) %>%
-            dplyr::select(sample, marker, genotype) %>%
-            dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker, true = "FLAG", false = ""))
-            dplyr::filter(sample_id %in% founderSamples$sample_id, marker_flag == "", 
+wide_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".fst")) %>%
+            dplyr::select(sample_id, marker, genotype) %>%
+            dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker, true = "FLAG", false = "")) %>%
+            dplyr::filter(sample_id %in% founderSamples$sample_id, marker_flag == "") %>% 
+            dplyr::select(-marker_flag) %>%
             tidyr::pivot_wider(names_from = marker, values_from = genotype)
 
 recoded_wide_sample_genos <- suppressWarnings(data.frame(apply(wide_chr_genos[,2:ncol(wide_chr_genos)], 2, recodeCalls)))
-rownames(recoded_wide_sample_genos) <- wide_chr_genos$sample
+rownames(recoded_wide_sample_genos) <- wide_chr_genos$sample_id
 
 writeWideChrGenos(x = wide_chr_genos, y = args[1])
