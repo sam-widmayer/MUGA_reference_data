@@ -323,4 +323,4 @@ save(control_allele_freqs_df,
     long_XY_intensities,
     predicted.sexes, file = "data/GigaMUGA/Marker_QC.RData")
 save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
-save(reSexed_samples, file = "data/GigaMUGA/sex_check_results.RData")
+save(sex.chr.intensities, reSexed_samples, file = "data/GigaMUGA/sex_check_results.RData")
