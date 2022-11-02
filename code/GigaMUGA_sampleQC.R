@@ -17,7 +17,7 @@ control_genotype_files <- list.files("data/GigaMUGA/", pattern = "gm_genos_chr")
 # Creating parallelization plan for furrr
 plan(multisession, workers = 23)
 make_chunks <- furrr:::make_chunks
-suppressMessages(suppressMessagesmake_chunks(n_x = 23, chunk_size = 1))
+suppressMessages(make_chunks(n_x = 23, chunk_size = 1))
 
 # Calculating frequency of each genotype for each marker
 control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
@@ -91,6 +91,7 @@ long_XY_intensities <- X.fst %>%
     dplyr::bind_rows(.,Y.fst) %>%
     dplyr::left_join(., gm_metadata)
 
-save(control_allele_freqs_df, above.cutoff,
-    n.calls.strains.df, high.n.samples,
+save(control_allele_freqs_df,
+    n.calls.strains.df,
     long_XY_intensities, file = "data/GigaMUGA/Marker_QC.RData")
+save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
