@@ -201,6 +201,8 @@ long_XY_intensities <- X.fst %>%
     dplyr::bind_rows(.,Y.fst) %>%
     dplyr::left_join(., gm_metadata)
 
-save(control_allele_freqs_df, above.cutoff,
-    n.calls.strains.df, high.n.samples,
-    predicted.sexes, long_XY_intensities, file = "data/GigaMUGA/Marker_QC.RData")
+
+save(control_allele_freqs_df,
+    n.calls.strains.df,
+    long_XY_intensities, predicted.sexes, file = "data/GigaMUGA/Marker_QC.RData")
+save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
