@@ -73,36 +73,6 @@ callGeno <- function(x){
 }
 
 ###########################################
-# Function used in the loop which forms founder consensus genotypes prior to background QC
-# Inputs:
-# mk = marker
-# data = genotype data for each founder sample
-# f = founder strain
-# Outputs:
-# data frame with 1 row with columns: marker; consensus genotype for founder strain f 
-###########################################
-removeExtremeInts <- function(mk, data, f){
-    
-    # Calculate summary statistics for probe intensities
-    sd.x.int <- sd(data$X)
-    sd.y.int <- sd(data$Y)
-    mean.x.int <- mean(data$X)
-    mean.y.int <- mean(data$Y)
-
-    data %>%
-      # With a prior expectation provided by an "N" call, determine whether probe intensities are unusual and 
-      # flag samples that meet both criteria
-      dplyr::mutate(x.ex = dplyr::if_else(X > (mean.x.int + sd.x.int) | X > (mean.x.int + sd.x.int), true = "EX", false = ""),
-                    y.ex = dplyr::if_else(Y > (mean.y.int + sd.y.int) | X > (mean.y.int + sd.y.int), true = "EX", false = ""),
-                    flag = dplyr::if_else(genotype == "N" & (x.ex == "EX" | y.ex == "EX"), true = "FLAG", false = "")) %>%
-      dplyr::filter(flag != "FLAG") %>%
-      dplyr::mutate(marker = mk) %>%
-      dplyr::distinct(marker,genotype) %>%
-      dplyr::select(marker,genotype) %>%
-      `colnames<-`(c("marker",f))
-  }
-
-###########################################
 # Function to form F1 genotypes from founder consensus genotypes
 # Inputs:
 # x = Row of genotype values

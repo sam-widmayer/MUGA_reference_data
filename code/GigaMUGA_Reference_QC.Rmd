@@ -475,6 +475,7 @@ findConsensusGenotypes <- function(mk, data){
 ```{r}
 load("../data/GigaMUGA/Marker_QC.RData")
 load("../data/GigaMUGA/bad_samples_markers.RData")
+load("../data/GigaMUGA/sex_check_results.RData")
 gm_metadata <- vroom::vroom("../data/GigaMUGA/gm_uwisc_v2.csv")
 ```
 
@@ -620,37 +621,46 @@ ggplotly(reSexed.plot,
 A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
 
 ```{r founder sample breakdown}
+# Count up samples for each founder and resulting cross and display a table
+# Dam names = row names; Sire name = column names
+founder_sample_table <- founderSamples %>%
+  dplyr::group_by(dam,sire) %>%
+  dplyr::count() %>%
+  tidyr::pivot_wider(names_from = sire, values_from = n)
+DT::datatable(founder_sample_table, escape = FALSE, 
+              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
+```
 
-# Vector of founder strain names
-founder_strains <- c("A.J","C57BL.6J","129S1.SvImJ","NOD.ShiLtJ",
-              "NZO.HILtJ","CAST.EiJ","PWK.PhJ","WSB.EiJ")
+From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8). We constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
+
+```{r, include=FALSE, eval=FALSE}
 
 # Re-flag genotypes based on bad markers or bad samples.
 # Inputs:
 # 1) All sample genotypes
 # 2) marker metadata
 # 3) flag cutoff tables
-genos.flagged <- control_genotypes %>%
-  tidyr::pivot_longer(-marker, 
-                      names_to = "sample", 
-                      values_to = "genotype") %>%
-  dplyr::left_join(., mm_metadata) %>%
-  # Flagging markers and samples
-  dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
-                                             true = "FLAG",
-                                             false = ""),
-                high_missing_sample = dplyr::if_else(condition = sample %in% high.n.samples$sample,
-                                                     true = "FLAG",
-                                                     false = ""))
+# genos.flagged <- control_genotypes %>%
+#   tidyr::pivot_longer(-marker, 
+#                       names_to = "sample", 
+#                       values_to = "genotype") %>%
+#   dplyr::left_join(., mm_metadata) %>%
+#   # Flagging markers and samples
+#   dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker,
+#                                              true = "FLAG",
+#                                              false = ""),
+#                 high_missing_sample = dplyr::if_else(condition = sample %in% high.n.samples$sample,
+#                                                      true = "FLAG",
+#                                                      false = ""))
 
 # Join the sample table with resex information with each sample's strain background from initial sex prediction.
 # Inputs:
 # 1) Sample metadata, including sex
 # 2) Sample strain background
-sample.meta <- reSexed_samples_table %>%
-  dplyr::select(sample, bad_sample, inferred.sex, resexed) %>%
-  dplyr::left_join(predicted.sexes.strings %>%
-                     dplyr::distinct(sample, bg))
+# sample.meta <- reSexed_samples_table %>%
+#   dplyr::select(sample, bad_sample, inferred.sex, resexed) %>%
+#   dplyr::left_join(predicted.sexes.strings %>%
+#                      dplyr::distinct(sample, bg))
 #   sample     bad_sample inferred.sex resexed bg     
 #   <chr>      <chr>      <chr>        <lgl>   <chr>  
 # 1 A.Jf       ""         f            FALSE   unknown
@@ -660,18 +670,18 @@ sample.meta <- reSexed_samples_table %>%
 # 5 A.Jm0111   ""         m            FALSE   unknown
 # 6 A.Jm0417   ""         m            FALSE   unknown
 
-# From the sample metadata, extract any sample derived from an CC/DO founder.
-founder_samples <- sample.meta %>%
-  dplyr::mutate(founder = case_when(str_detect(sample, founder_strains[1]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[2]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[3]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[4]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[5]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[6]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[7]) == TRUE ~ "FOUNDER",
-                                    str_detect(sample, founder_strains[8]) == TRUE ~ "FOUNDER",
-                                    TRUE ~ "NOT CC/DO Founder")) %>%
-  dplyr::filter(founder == "FOUNDER")
+# # From the sample metadata, extract any sample derived from an CC/DO founder.
+# founder_samples <- sample.meta %>%
+#   dplyr::mutate(founder = case_when(str_detect(sample, founder_strains[1]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[2]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[3]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[4]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[5]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[6]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[7]) == TRUE ~ "FOUNDER",
+#                                     str_detect(sample, founder_strains[8]) == TRUE ~ "FOUNDER",
+#                                     TRUE ~ "NOT CC/DO Founder")) %>%
+#   dplyr::filter(founder == "FOUNDER")
 #   sample     bad_sample inferred.sex resexed bg      founder
 #   <chr>      <chr>      <chr>        <lgl>   <chr>   <chr>  
 # 1 A.Jf       ""         f            FALSE   unknown FOUNDER
@@ -681,19 +691,19 @@ founder_samples <- sample.meta %>%
 # 5 A.Jm0111   ""         m            FALSE   unknown FOUNDER
 # 6 A.Jm0417   ""         m            FALSE   unknown FOUNDER
 
-# Identify parental strains of founder samples
-founder_dams <- founder_samples %>%
-  tidyr::separate(sample, sep = "x", into = c("dam","sire"), remove = F) %>%
-  dplyr::mutate(dam = case_when(str_detect(dam, founder_strains[1]) == TRUE ~ founder_strains[1],
-                                str_detect(dam, founder_strains[2]) == TRUE ~ founder_strains[2],
-                                str_detect(dam, founder_strains[3]) == TRUE ~ founder_strains[3],
-                                str_detect(dam, founder_strains[4]) == TRUE ~ founder_strains[4],
-                                str_detect(dam, founder_strains[5]) == TRUE ~ founder_strains[5],
-                                str_detect(dam, founder_strains[6]) == TRUE ~ founder_strains[6],
-                                str_detect(dam, founder_strains[7]) == TRUE ~ founder_strains[7],
-                                str_detect(dam, founder_strains[8]) == TRUE ~ founder_strains[8],
-                                TRUE ~ "NOT CC/DO Founder")) %>%
-  dplyr::filter(dam != "NOT CC/DO Founder")
+# # Identify parental strains of founder samples
+# founder_dams <- founder_samples %>%
+#   tidyr::separate(sample, sep = "x", into = c("dam","sire"), remove = F) %>%
+#   dplyr::mutate(dam = case_when(str_detect(dam, founder_strains[1]) == TRUE ~ founder_strains[1],
+#                                 str_detect(dam, founder_strains[2]) == TRUE ~ founder_strains[2],
+#                                 str_detect(dam, founder_strains[3]) == TRUE ~ founder_strains[3],
+#                                 str_detect(dam, founder_strains[4]) == TRUE ~ founder_strains[4],
+#                                 str_detect(dam, founder_strains[5]) == TRUE ~ founder_strains[5],
+#                                 str_detect(dam, founder_strains[6]) == TRUE ~ founder_strains[6],
+#                                 str_detect(dam, founder_strains[7]) == TRUE ~ founder_strains[7],
+#                                 str_detect(dam, founder_strains[8]) == TRUE ~ founder_strains[8],
+#                                 TRUE ~ "NOT CC/DO Founder")) %>%
+#   dplyr::filter(dam != "NOT CC/DO Founder")
 #   sample     dam   sire  bad_sample inferred.sex resexed bg      founder
 #   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>   <chr>  
 # 1 A.Jf       A.J   NA    ""         f            FALSE   unknown FOUNDER
@@ -704,49 +714,38 @@ founder_dams <- founder_samples %>%
 # 6 A.Jm0417   A.J   NA    ""         m            FALSE   unknown FOUNDER
 
 
-# Characterize the type of founder sample
-all_founder_samples <- founder_dams %>%
-  # Need to eliminate certain samples manually because a founder strain name was close to the sample name by chance
-  dplyr::mutate(weird.founder = case_when(str_detect(sample, "KOMP") == TRUE ~ "FLAG",
-                                          str_detect(sample, "CBA") == TRUE ~ "FLAG",
-                                          str_detect(sample, "AEJ") == TRUE ~ "FLAG",
-                                          str_detect(sample, "SJL") == TRUE ~ "FLAG",
-                                TRUE ~ "")) %>%
-  dplyr::filter(weird.founder == "") %>%
-  dplyr::mutate(sire = case_when(str_detect(sire, founder_strains[1]) == TRUE ~ founder_strains[1],
-                                str_detect(sire, founder_strains[2]) == TRUE ~ founder_strains[2],
-                                str_detect(sire, founder_strains[3]) == TRUE ~ founder_strains[3],
-                                str_detect(sire, founder_strains[4]) == TRUE ~ founder_strains[4],
-                                str_detect(sire, founder_strains[5]) == TRUE ~ founder_strains[5],
-                                str_detect(sire, founder_strains[6]) == TRUE ~ founder_strains[6],
-                                str_detect(sire, founder_strains[7]) == TRUE ~ founder_strains[7],
-                                str_detect(sire, founder_strains[8]) == TRUE ~ founder_strains[8],
-                                TRUE ~ ""),
-                sire = if_else(sire == "", true = dam, false = sire),
-                bg = if_else(dam == sire, "INBRED", "CROSS"))
-#   sample     dam   sire  bad_sample inferred.sex resexed bg     founder weird.founder
-#   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>  <chr>   <chr>        
-# 1 A.Jf       A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
-# 2 A.Jf0374   A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
-# 3 A.Jf0374.1 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
-# 4 A.Jf0374.2 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
-# 5 A.Jm0111   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""           
-# 6 A.Jm0417   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""  
-
-
-
-# Count up samples for each founder and resulting cross and display a table
-# Dam names = row names; Sire name = column names
-founder_sample_table <- all_founder_samples %>%
-  dplyr::group_by(dam,sire) %>%
-  dplyr::count() %>%
-  tidyr::pivot_wider(names_from = sire, values_from = n)
-DT::datatable(founder_sample_table, escape = FALSE, 
-              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
+# # Characterize the type of founder sample
+# all_founder_samples <- founder_dams %>%
+#   # Need to eliminate certain samples manually because a founder strain name was close to the sample name by chance
+#   dplyr::mutate(weird.founder = case_when(str_detect(sample, "KOMP") == TRUE ~ "FLAG",
+#                                           str_detect(sample, "CBA") == TRUE ~ "FLAG",
+#                                           str_detect(sample, "AEJ") == TRUE ~ "FLAG",
+#                                           str_detect(sample, "SJL") == TRUE ~ "FLAG",
+#                                 TRUE ~ "")) %>%
+#   dplyr::filter(weird.founder == "") %>%
+#   dplyr::mutate(sire = case_when(str_detect(sire, founder_strains[1]) == TRUE ~ founder_strains[1],
+#                                 str_detect(sire, founder_strains[2]) == TRUE ~ founder_strains[2],
+#                                 str_detect(sire, founder_strains[3]) == TRUE ~ founder_strains[3],
+#                                 str_detect(sire, founder_strains[4]) == TRUE ~ founder_strains[4],
+#                                 str_detect(sire, founder_strains[5]) == TRUE ~ founder_strains[5],
+#                                 str_detect(sire, founder_strains[6]) == TRUE ~ founder_strains[6],
+#                                 str_detect(sire, founder_strains[7]) == TRUE ~ founder_strains[7],
+#                                 str_detect(sire, founder_strains[8]) == TRUE ~ founder_strains[8],
+#                                 TRUE ~ ""),
+#                 sire = if_else(sire == "", true = dam, false = sire),
+#                 bg = if_else(dam == sire, "INBRED", "CROSS"))
+# #   sample     dam   sire  bad_sample inferred.sex resexed bg     founder weird.founder
+# #   <chr>      <chr> <chr> <chr>      <chr>        <lgl>   <chr>  <chr>   <chr>        
+# # 1 A.Jf       A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# # 2 A.Jf0374   A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# # 3 A.Jf0374.1 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# # 4 A.Jf0374.2 A.J   A.J   ""         f            FALSE   INBRED FOUNDER ""           
+# # 5 A.Jm0111   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""           
+# # 6 A.Jm0417   A.J   A.J   ""         m            FALSE   INBRED FOUNDER ""  
 
 ```
 
-From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8). We constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
+
 
 ```{r founder sample dendrogram, fig.width=5, fig.height=5}
 # Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype

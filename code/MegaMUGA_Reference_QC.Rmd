@@ -91,8 +91,8 @@ removeExtremeInts <- function(mk, data, f){
     data %>%
       # With a prior expectation provided by an "N" call, determine whether probe intensities are unusual and 
       # flag samples that meet both criteria
-      dplyr::mutate(x.ex = dplyr::if_else(x_int > (mean.x.int + sd.x.int) | x_int > (mean.x.int + sd.x.int), true = "EX", false = ""),
-                    y.ex = dplyr::if_else(y_int > (mean.y.int + sd.y.int) | x_int > (mean.y.int + sd.y.int), true = "EX", false = ""),
+      dplyr::mutate(x.ex = dplyr::if_else(x_int > (mean.x.int + sd.x.int) | x_int < (mean.x.int - sd.x.int), true = "EX", false = ""),
+                    y.ex = dplyr::if_else(y_int > (mean.y.int + sd.y.int) | y_int < (mean.y.int - sd.y.int), true = "EX", false = ""),
                     flag = dplyr::if_else(genotype == "N" & (x.ex == "EX" | y.ex == "EX"), true = "FLAG", false = "")) %>%
       dplyr::filter(flag != "FLAG") %>%
       dplyr::mutate(marker = mk) %>%
