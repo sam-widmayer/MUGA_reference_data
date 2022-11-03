@@ -212,59 +212,59 @@ callHemiGeno <- function(x){
 # Outputs:
 # geno_comp_Xrecoded = data frame of sample genotypes and concordance with expected F1 genotypes
 ###########################################
-callXGeno <- function(sp, isex, data, cross, chrX_markers){
-  
-  if(isex == "m"){
-    
-    # Filter expected genotypes to just X chromosome markers
-    male_F1 <- cross %>%
-      dplyr::filter(marker %in% chrX_markers$marker) %>%
-      dplyr::ungroup()
-    # Use callHemiGeno function to assign maternal genotypes as expected X genotypes in males
-    male_F1$predicted_genotypes <- apply(male_F1, 1, callHemiGeno)
-    male_recoded_cross <- cross %>%
-      dplyr::filter(!marker %in% chrX_markers$marker) %>%
-      dplyr::bind_rows(.,male_F1)
-    
-    # Calculate the concordance between genotypes using hemizygous X calls
-    geno_comp_Xrecoded <- data %>%
-      dplyr::inner_join(.,male_recoded_cross %>%
-                          dplyr::ungroup() %>%
-                          dplyr::select(marker,predicted_genotypes)) %>% 
-      dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
-                                                    true = "MATCH",
-                                                    false = "NO MATCH"),
-                    alt_chr = dplyr::case_when(chr == "M" ~ "M",
-                                               chr == "X" ~ "X",
-                                               chr == "Y" ~ "Y",
-                                               is.na(chr) ~ "Other",
-                                               TRUE ~ "Autosome"),
-                    alt_chr = as.factor(alt_chr),
-                    sample = sp,
-                    inferred.sex = isex)
-    
-  } else {
-    
-    # Calculate the concordance between genotypes using diploid X calls
-    geno_comp_Xrecoded <- data %>%
-      dplyr::inner_join(.,cross %>%
-                          dplyr::ungroup() %>%
-                          dplyr::select(marker,predicted_genotypes)) %>%
-      dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
-                                                    true = "MATCH",
-                                                    false = "NO MATCH"),
-                    alt_chr = dplyr::case_when(chr == "M" ~ "M",
-                                               chr == "X" ~ "X",
-                                               chr == "Y" ~ "Y",
-                                               is.na(chr) ~ "Other",
-                                               TRUE ~ "Autosome"),
-                    alt_chr = as.factor(alt_chr),
-                    sample = sp,
-                    inferred.sex = isex)
-  }
-  
-  return(geno_comp_Xrecoded)
-}
+# callXGeno <- function(sp, isex, data, cross, chrX_markers){
+#   
+#   if(isex == "m"){
+#     
+#     # Filter expected genotypes to just X chromosome markers
+#     male_F1 <- cross %>%
+#       dplyr::filter(marker %in% chrX_markers$marker) %>%
+#       dplyr::ungroup()
+#     # Use callHemiGeno function to assign maternal genotypes as expected X genotypes in males
+#     male_F1$predicted_genotypes <- apply(male_F1, 1, callHemiGeno)
+#     male_recoded_cross <- cross %>%
+#       dplyr::filter(!marker %in% chrX_markers$marker) %>%
+#       dplyr::bind_rows(.,male_F1)
+#     
+#     # Calculate the concordance between genotypes using hemizygous X calls
+#     geno_comp_Xrecoded <- data %>%
+#       dplyr::inner_join(.,male_recoded_cross %>%
+#                           dplyr::ungroup() %>%
+#                           dplyr::select(marker,predicted_genotypes)) %>% 
+#       dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+#                                                     true = "MATCH",
+#                                                     false = "NO MATCH"),
+#                     alt_chr = dplyr::case_when(chr == "M" ~ "M",
+#                                                chr == "X" ~ "X",
+#                                                chr == "Y" ~ "Y",
+#                                                is.na(chr) ~ "Other",
+#                                                TRUE ~ "Autosome"),
+#                     alt_chr = as.factor(alt_chr),
+#                     sample = sp,
+#                     inferred.sex = isex)
+#     
+#   } else {
+#     
+#     # Calculate the concordance between genotypes using diploid X calls
+#     geno_comp_Xrecoded <- data %>%
+#       dplyr::inner_join(.,cross %>%
+#                           dplyr::ungroup() %>%
+#                           dplyr::select(marker,predicted_genotypes)) %>%
+#       dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+#                                                     true = "MATCH",
+#                                                     false = "NO MATCH"),
+#                     alt_chr = dplyr::case_when(chr == "M" ~ "M",
+#                                                chr == "X" ~ "X",
+#                                                chr == "Y" ~ "Y",
+#                                                is.na(chr) ~ "Other",
+#                                                TRUE ~ "Autosome"),
+#                     alt_chr = as.factor(alt_chr),
+#                     sample = sp,
+#                     inferred.sex = isex)
+#   }
+#   
+#   return(geno_comp_Xrecoded)
+# }
 
 ###########################################
 # Function to form reference sample genotypes for comparison
@@ -333,24 +333,84 @@ founder_background_QC <- function(dam, sire){
     final_geno_comp_list <- list()
     for(i in 1:length(nested_samples$sample_id)){
       
-      ## Autosome
-      final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
-        dplyr::inner_join(., cross %>% 
-                            dplyr::select(marker, predicted_genotypes), 
-                          by = "marker") %>%
-        dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
-                                                      true = "MATCH",
-                                                      false = "NO MATCH"),
-                      alt_chr = dplyr::case_when(chr == "M" ~ "M",
-                                                 chr == "X" ~ "X",
-                                                 chr == "Y" ~ "Y",
-                                                 is.na(chr) ~ "Other",
-                                                 TRUE ~ "Autosome"),
-                      alt_chr = as.factor(alt_chr),
-                      sample = nested_samples$sample_id[[i]],
-                      inferred.sex = nested_samples$inferred.sex[[i]])
-    }
+      if(args[1] == "M"){
+        # Mt
+        cross$predicted_genotypes <- apply(cross, 1, callHemiGeno)
+        
+        final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+          dplyr::inner_join(., cross %>% 
+                              dplyr::select(marker, predicted_genotypes), 
+                            by = "marker") %>%
+          dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                        true = "MATCH",
+                                                        false = "NO MATCH"),
+                        alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                   chr == "X" ~ "X",
+                                                   chr == "Y" ~ "Y",
+                                                   is.na(chr) ~ "Other",
+                                                   TRUE ~ "Autosome"),
+                        alt_chr = as.factor(alt_chr),
+                        sample = nested_samples$sample_id[[i]],
+                        inferred.sex = nested_samples$inferred.sex[[i]])
+      } else if(args[1] == "X"){
+        if(nested_samples$sample_id[[i]] == "m"){
+          # Male X Chrs
+          cross$predicted_genotypes <- apply(cross, 1, callHemiGeno)
+          
+          final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+            dplyr::inner_join(., cross %>% 
+                                dplyr::select(marker, predicted_genotypes), 
+                              by = "marker") %>%
+            dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                          true = "MATCH",
+                                                          false = "NO MATCH"),
+                          alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                     chr == "X" ~ "X",
+                                                     chr == "Y" ~ "Y",
+                                                     is.na(chr) ~ "Other",
+                                                     TRUE ~ "Autosome"),
+                          alt_chr = as.factor(alt_chr),
+                          sample = nested_samples$sample_id[[i]],
+                          inferred.sex = nested_samples$inferred.sex[[i]])
+        } else {
+          # Female X Chrs
+          final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+            dplyr::inner_join(., cross %>% 
+                                dplyr::select(marker, predicted_genotypes), 
+                              by = "marker") %>%
+            dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                          true = "MATCH",
+                                                          false = "NO MATCH"),
+                          alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                     chr == "X" ~ "X",
+                                                     chr == "Y" ~ "Y",
+                                                     is.na(chr) ~ "Other",
+                                                     TRUE ~ "Autosome"),
+                          alt_chr = as.factor(alt_chr),
+                          sample = nested_samples$sample_id[[i]],
+                          inferred.sex = nested_samples$inferred.sex[[i]])
+        } 
+      } else {
+        # Autosome
+        final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+          dplyr::inner_join(., cross %>% 
+                              dplyr::select(marker, predicted_genotypes), 
+                            by = "marker") %>%
+          dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                        true = "MATCH",
+                                                        false = "NO MATCH"),
+                        alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                   chr == "X" ~ "X",
+                                                   chr == "Y" ~ "Y",
+                                                   is.na(chr) ~ "Other",
+                                                   TRUE ~ "Autosome"),
+                        alt_chr = as.factor(alt_chr),
+                        sample = nested_samples$sample_id[[i]],
+                        inferred.sex = nested_samples$inferred.sex[[i]])
+        }
+      }
     final_geno_comp <- Reduce(rbind,final_geno_comp_list)
+    
     
     # Tabulate the percentage of concordant genotypes between theoretical and actual F1 samples
     geno_comp_summary <- final_geno_comp %>%
@@ -401,8 +461,9 @@ founder_background_QC <- function(dam, sire){
     #                                          alt_chr_X_list), 
     #                                .f = callXGeno) %>% 
     # Reduce(rbind,.)
+    }
   }
-}
+
 
 #args <- commandArgs(trailingOnly = TRUE)
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
@@ -421,8 +482,6 @@ good_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".f
 
 founder_strains <- c("A/J","C57BL/6J","129S1/SvImJ","NOD/ShiLtJ",
                      "NZO/HILtJ","CAST/EiJ","PWK/PhJ","WSB/EiJ")
-
-
 for(f in founder_strains){
     print(paste("Generating Calls for",f))
   
@@ -572,6 +631,7 @@ plan(multisession, workers = 16)
 make_chunks <- furrr:::make_chunks
 make_chunks(n_x = length(dam_calls), n_workers = 16)
 # Compare the predicted genotypes (from consensus calls) to the actual genotypes of each sample
+# founder_background_QC(dam = dam_calls[[5]], sire = sire_calls[[5]])
 bg_QC <- furrr::future_map2(dam_calls, sire_calls, founder_background_QC)
 
 # Keep outputs from the QC that are lists; if QC wasn't performed for a given background, the output was a character vector warning
