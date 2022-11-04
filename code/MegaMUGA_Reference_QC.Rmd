@@ -1192,7 +1192,7 @@ DT::datatable(founder_sample_table, escape = FALSE,
 
 From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8). We constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
 
-```{r founder sample dendrogram, fig.width=5, fig.height=5}
+```{r founder sample dendrogram, fig.width=10, fig.height=10}
 # Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
 # Inputs: 
 # 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
