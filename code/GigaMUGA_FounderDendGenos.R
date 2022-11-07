@@ -46,6 +46,6 @@ wide_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".f
             tidyr::pivot_wider(names_from = marker, values_from = genotype)
 
 recoded_wide_sample_genos <- suppressWarnings(data.frame(apply(wide_chr_genos[,2:ncol(wide_chr_genos)], 2, recodeCalls)))
-rownames(recoded_wide_sample_genos) <- wide_chr_genos$sample_id
+recoded_wide_sample_genos$sample_id <- wide_chr_genos$sample_id
 
-writeWideChrGenos(x = wide_chr_genos, y = args[1])
+writeWideChrGenos(x = recoded_wide_sample_genos, y = args[1])

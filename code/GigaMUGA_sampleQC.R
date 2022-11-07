@@ -239,14 +239,6 @@ Ychr.int <- flagged_XY_intensities %>%
   dplyr::summarise(mean.y.int = mean(Y))
 # Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
 
-#   sample_id       high_missing_sample mean.y.int
-#   <chr>           <chr>                    <dbl>
-# 1 10570m4381      ""                       0.368
-# 2 11531m8014      ""                       0.351
-# 3 11666m45109     ""                       0.351
-# 4 11679m4874      ""                       0.359
-# 5 11888m7081      ""                       0.355
-# 6 129P1/ReJm35858 ""                       0.390
 
 
 # Column binding the two intensities if the sample information matches
