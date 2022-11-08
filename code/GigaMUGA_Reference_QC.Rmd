@@ -40,9 +40,9 @@ QCtheme <- theme_bw() +
         axis.title = element_text(colour = "black"))
 writeReferenceGenotypes <- function(founder_file, nonfounder_file){
   if(file.exists(paste0("../data/GigaMUGA/",founder_file))){
-    founder_sample_genos <- fst::read.fst(paste0("../data/GigaMUGA/",founder_file)) %>%
+    founder_sample_genos <- fst::read.fst(paste0("../data/GigaMUGA/GigaMUGA_founder_sample_genotypes/",founder_file)) %>%
       dplyr::filter(!marker %in% above.cutoff$marker) # should be clean, but just in case
-    non_founder_sample_genos <- fst::read.fst(paste0("../data/GigaMUGA/",nonfounder_file)) %>%
+    non_founder_sample_genos <- fst::read.fst(paste0("../data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
       dplyr::filter(!sample_id %in% colnames(founder_sample_genos)[-1],
                     !sample_id %in% bad_samples$sample_id,
                     !marker %in% above.cutoff$marker) %>%
@@ -56,7 +56,7 @@ writeReferenceGenotypes <- function(founder_file, nonfounder_file){
     reference_sample_genos[is.na(reference_sample_genos)] <- "N"
     return(reference_sample_genos)
   } else {
-    non_founder_sample_genos_int <- fst::read.fst(paste0("../data/GigaMUGA/",nonfounder_file)) %>%
+    non_founder_sample_genos_int <- fst::read.fst(paste0("../data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
       dplyr::filter(!sample_id %in% bad_samples$sample_id,
                     !marker %in% above.cutoff$marker) %>%
       dplyr::select(sample_id, marker, genotype)
@@ -75,14 +75,14 @@ writeReferenceGenotypes <- function(founder_file, nonfounder_file){
 }
 writeFounderConsensusGenotypes <- function(founder_file){
   
-  founder_consensus_genos <- fst::read.fst(paste0("../data/GigaMUGA/",founder_file)) %>%
+  founder_consensus_genos <- fst::read.fst(paste0("../data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/",founder_file)) %>%
     dplyr::filter(!marker %in% above.cutoff$marker) # should be clean, but just in case
   
   return(founder_consensus_genos)
 }
 writeReferenceIntensities <- function(nonfounder_file){
   
-    reference_sample_intensities <- fst::read.fst(paste0("../data/GigaMUGA/",nonfounder_file)) %>%
+    reference_sample_intensities <- fst::read.fst(paste0("../data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
       dplyr::filter(!sample_id %in% bad_samples$sample_id,
                     !marker %in% above.cutoff$marker) %>%
       dplyr::select(sample_id, marker, X, Y)
@@ -138,8 +138,8 @@ findStrain <- function(x){
 ## Loading in data from Sumner analyses
 ```{r}
 load("../data/GigaMUGA/GigaMUGA_QC_Results.RData")
-load("../data/GigaMUGA/bad_samples_markers.RData")
-load("../data/GigaMUGA/sex_check_results.RData")
+load("../data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")
+load("../data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
 gm_metadata <- vroom::vroom("../data/GigaMUGA/gm_uwisc_v2.csv")
 ```
 
@@ -264,9 +264,9 @@ The plot below demonstrates that this clustering technique does a pretty good jo
 ```{r kmeans plotting}
 # Interactive scatter plot of intensities similar to above, but recolors and outlines samples based on redesignated sexes.
 reSexed.plot <- ggplot(reSexed_samples_table %>%
-         dplyr::arrange(inferred.sex),
-       mapping = aes(x = mean.x.chr.int, 
-                     y = mean.y.int, 
+                         dplyr::arrange(inferred.sex),
+                       mapping = aes(x = mean.x.chr.int, 
+                                     y = mean.y.int, 
                      fill = inferred.sex,
                      colour = predicted.sex,
                      text = sample_id,
@@ -301,10 +301,10 @@ From the table, we can see that all possible pairwise combinations of CC/DO foun
 
 
 ```{r founder sample dendrogram, fig.width=10, fig.height=10}
-recoded_wide_geno_files <- list.files("../data/GigaMUGA/", pattern = "gm_widegenos_chr")
+recoded_wide_geno_files <- list.files("../data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos//", pattern = "gm_widegenos_chr")
 recoded_wide_sample_genos_list <- list()
 for(i in 1:length(recoded_wide_geno_files)){
-  recoded_wide_sample_genos_list[[i]] <- fst::read.fst(path = paste0("../data/GigaMUGA/",recoded_wide_geno_files[[i]]))
+  recoded_wide_sample_genos_list[[i]] <- fst::read.fst(path = paste0("../data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/",recoded_wide_geno_files[[i]]))
 }
 recoded_wide_sample_genos <- Reduce(dplyr::bind_cols,recoded_wide_sample_genos_list)
 sample_id_cols <- recoded_wide_sample_genos %>%
@@ -329,10 +329,10 @@ plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
 From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. The genotypes for intersecting markers between two strains were combined ("crossed") to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction. In order to generate a consensus call for each CC/DO founder, we had to determine whether individual samples for a given founder were correctly typed and, if the marker failed, eliminate it so that consensus could be formed. Below is an example of what that might look like for an individual marker. Note how when at least one sample for a given strain is not assigned one of the two expected alleles, the consensus is an "NA".
 
 ```{r fig.width=10, fig.height=5}
-chr_concordance_files <- list.files("../data/GigaMUGA/", pattern = "gm_founder_concordance_chr_")
+chr_concordance_files <- list.files("../data/GigaMUGA/GigaMUGA_founder_sample_concordance/")
 chr_concordance_list <- list()
 for(i in 1:length(chr_concordance_files)){
-  chr_concordance_list[[i]] <- fst::read.fst(path = paste0("../data/GigaMUGA/",chr_concordance_files[[i]]))
+  chr_concordance_list[[i]] <- fst::read.fst(path = paste0("../data/GigaMUGA/GigaMUGA_founder_sample_concordance/",chr_concordance_files[[i]]))
 }
 founder_concordance_df <- Reduce(dplyr::full_join, chr_concordance_list)
 
@@ -415,13 +415,13 @@ bad_samples <- high.n.samples %>%
 ## Write Reference Genotypes - All Samples ##
 #############################################
 
-founder_sample_geno_files <- c(as.list(list.files(path = "../data/GigaMUGA/", pattern = "gm_founder_genos_chr_")[1:19]),
+founder_sample_geno_files <- c(as.list(list.files(path = "../data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", pattern = "gm_founder_genos_chr_")[1:19]),
                                   "M",
                                   "NA",
-                                  list.files(path = "../data/GigaMUGA/", pattern = "gm_founder_genos_chr_")[20], 
+                                  list.files(path = "../data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", pattern = "gm_founder_genos_chr_")[20], 
                                   "Y")
 
-nonfounder_sample_geno_files <- as.list(list.files(path = "../data/GigaMUGA/", pattern = "gm_genos_chr_"))
+nonfounder_sample_geno_files <- as.list(list.files(path = "../data/GigaMUGA/GigaMUGA_reference_genotypes/", pattern = "gm_genos_chr_"))
 future::plan(multisession, workers = 16)
 make_chunks <- furrr:::make_chunks
 make_chunks(n_x = length(founder_sample_geno_files), n_workers = 16)
@@ -455,7 +455,7 @@ reference_Y_intensities_df <- purrr::transpose(reference_intensities_list)[[2]] 
 #################################################
 ## Write Consensus Genotypes - Founder Strains ##
 #################################################
-founder_consensus_files <- list.files(path = "../data/GigaMUGA/", pattern = "gm_founder_consensus_chr_")
+founder_consensus_files <- list.files(path = "../data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/", pattern = "gm_founder_consensus_chr_")
 founder_consensus_genos <- furrr::future_map(.x = founder_consensus_files, 
                                              .f = writeFounderConsensusGenotypes, 
                                              .options = furrr_options(seed = TRUE)) %>%

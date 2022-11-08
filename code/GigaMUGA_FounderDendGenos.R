@@ -3,11 +3,6 @@ require(dplyr)
 require(fst)
 require(tidyr)
 require(stringr)
-require(parallel)
-require(data.table)
-require(purrr)
-require(furrr)
-require(magrittr)
 require(vroom)
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -27,18 +22,23 @@ recodeCalls <- function(x){
 }
 
 writeWideChrGenos <- function(x,y){
-    fst::write.fst(x, path = paste0("data/GigaMUGA/gm_widegenos_chr_",y,".fst"))
+  if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/")){
+    fst::write.fst(x, path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/gm_widegenos_chr_",y,".fst"))
+  } else {
+    dir.create(path = "data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/")
+    fst::write.fst(x, path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/gm_widegenos_chr_",y,".fst"))
+  }
 }
 
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
-load("data/GigaMUGA/bad_samples_markers.RData")
+load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
 
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
                             progress = T)
 print(paste("Writing wide genotype file for chromosome",args[1]))
 
 
-wide_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".fst")) %>%
+wide_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_",args[1],".fst")) %>%
             dplyr::select(sample_id, marker, genotype) %>%
             dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker, true = "FLAG", false = "")) %>%
             dplyr::filter(sample_id %in% founderSamples$sample_id, marker_flag == "") %>% 

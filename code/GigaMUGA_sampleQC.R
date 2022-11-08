@@ -12,7 +12,7 @@ require(vroom)
 
 # Reading in source data
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv", num_threads = detectCores())
-control_genotype_files <- list.files("data/GigaMUGA/", pattern = "gm_genos_chr")
+control_genotype_files <- list.files("data/GigaMUGA/GigaMUGA_reference_genotypes/", pattern = "gm_genos_chr")
 
 # Creating parallelization plan for furrr
 plan(multisession, workers = 23)
@@ -21,7 +21,7 @@ suppressMessages(make_chunks(n_x = 23, chunk_size = 1))
 
 # Calculating frequency of each genotype for each marker
 control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
-                    chr_geno <- read.fst(paste0("data/GigaMUGA/",x))
+                    chr_geno <- read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",x))
                     control_allele_freqs <- chr_geno %>%
                       dplyr::group_by(marker, genotype) %>%
                       dplyr::count() %>% 
@@ -54,7 +54,7 @@ above.cutoff <- no.calls %>%
 ## Calculating the number of missing markers for each sample
 n.calls.strains <- furrr::future_map(control_genotype_files,
                                      function(x){
-                                       chr_geno <- read.fst(paste0("data/GigaMUGA/",x))
+                                       chr_geno <- read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",x))
                                        sample_Ns <- chr_geno %>%
                                          dplyr::group_by(sample_id, genotype) %>%
                                          dplyr::count() %>% 
@@ -195,8 +195,8 @@ predicted.sexes <- n.calls.strains.df %>%
   dplyr::distinct(sample_id, predicted.sex)
 
 ## Reading in probe intensities
-X.fst <- read.fst("data/GigaMUGA/gm_genos_chr_X.fst")
-Y.fst <- read.fst("data/GigaMUGA/gm_genos_chr_Y.fst")
+X.fst <- read.fst("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_X.fst")
+Y.fst <- read.fst("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_Y.fst")
 long_XY_intensities <- X.fst %>%
     dplyr::bind_rows(.,Y.fst) %>%
     dplyr::left_join(., gm_metadata)
@@ -216,25 +216,17 @@ Xchr.int <- flagged_XY_intensities %>%
   dplyr::filter(marker_flag != "FLAG",
                 chr == "X") %>%
   dplyr::mutate(x.chr.int = X + Y,
-                genotype = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
+                genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
+  dplyr::filter(!is.na(x.chr.int)) %>%
   dplyr::group_by(sample_id, high_missing_sample) %>%
   dplyr::summarise(mean.x.chr.int = mean(x.chr.int))
-# Expected output: Sample-averaged summed x- and y-channel probe intensities for all chromosome X markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
-
-#   sample_id       high_missing_sample mean.x.chr.int
-#   <chr>           <chr>                        <dbl>
-# 1 10570m4381      ""                           0.780
-# 2 11531m8014      ""                           0.774
-# 3 11666m45109     ""                           0.751
-# 4 11679m4874      ""                           0.783
-# 5 11888m7081      ""                           0.786
-# 6 129P1/ReJm35858 ""                           0.822
 
 
 Ychr.int <- flagged_XY_intensities %>%
   dplyr::ungroup() %>%
   dplyr::filter(chr == "Y") %>% # every marker on the Y chromosome was a flagged marker...so for the purposes of sexing I tried using the bad markers anyways
-  dplyr::mutate(allele1 = dplyr::if_else(allele1 == "-", "N", as.character(allele1))) %>%
+  dplyr::mutate(genotype = dplyr::if_else(genotype == "-", "N", as.character(genotype))) %>%
+  dplyr::filter(!is.na(Y)) %>%
   dplyr::group_by(sample_id, high_missing_sample) %>%
   dplyr::summarise(mean.y.int = mean(Y))
 # Expected output: Sample-averaged y-channel probe intensities for all chromosome Y markers. Note: replicated sample information collapses at this step. This is tolerable under the assumption that the samples with identical names are in fact duplicates of the same individual.
@@ -302,11 +294,7 @@ reSexed.y <- sex.chr.k.means.y %>%
   dplyr::left_join(., top.clusters.y)
 reSexed_samples <- full_join(reSexed.x, reSexed.y) %>%
   dplyr::full_join(sex.chr.intensities.goodsamples %>%
-                     dplyr::select(sample_id, predicted.sex),.) %>%
-                     # This sample was clustered differently based on X and Y but is labeled with f
-  dplyr::mutate(inferred.sex = dplyr::case_when(sample_id == "8049x8046f5" ~ "f",
-                                                is.na(inferred.sex) ~ predicted.sex, 
-                                                !is.na(inferred.sex) ~ inferred.sex)) %>%
+                     dplyr::select(sample_id, predicted.sex),.) %>% 
   dplyr::select(-x.clust, -y.clust) %>%
   dplyr::distinct()
 
@@ -344,9 +332,7 @@ founderSamples <- reSexed_samples %>%
 
 
 save(control_allele_freqs_df,
-    n.calls.strains.df,
-    long_XY_intensities,
-    predicted.sexes,
+     n.calls.strains.df,
     founderSamples, file = "data/GigaMUGA/GigaMUGA_QC_Results.RData")
-save(above.cutoff, high.n.samples, file = "data/GigaMUGA/bad_samples_markers.RData")
-save(sex.chr.intensities, reSexed_samples, file = "data/GigaMUGA/sex_check_results.RData")
+save(above.cutoff, high.n.samples, file = "data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
+save(predicted.sexes, sex.chr.intensities, reSexed_samples, file = "data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")

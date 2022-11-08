@@ -389,12 +389,12 @@ founder_background_QC <- function(dam, sire){
 
 args <- commandArgs(trailingOnly = TRUE)
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
-load("data/GigaMUGA/bad_samples_markers.RData")
-load("data/GigaMUGA/sex_check_results.RData")
+load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
+load("data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
                             progress = T)
 
-good_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/gm_genos_chr_",args[1],".fst")) %>%
+good_chr_genos <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_",args[1],".fst")) %>%
             dplyr::mutate(marker_flag = dplyr::if_else(condition = marker %in% above.cutoff$marker, 
                             true = "FLAG", 
                             false = ""),
@@ -503,7 +503,8 @@ make_chunks <- furrr:::make_chunks
 make_chunks(n_x = length(missing_consensus_calls_nested$marker), n_workers = 16)
 founder_consensus_incomplete_recoded <- suppressWarnings(furrr::future_map2(missing_consensus_calls_nested$marker,
                                                                             missing_consensus_calls_nested$data,
-                                                                            findConsensusGenotypes))
+                                                                            findConsensusGenotypes, 
+                                                                            .options = furrr_options(seed = TRUE)))
 founder_consensus_incomplete_recoded_tr <- purrr::transpose(founder_consensus_incomplete_recoded)
 new_consensus_founders <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[1]])
 updated_founder_sample_genotypes <- Reduce(dplyr::bind_rows,founder_consensus_incomplete_recoded_tr[[2]])
@@ -556,8 +557,10 @@ plan(multisession, workers = 16)
 make_chunks <- furrr:::make_chunks
 make_chunks(n_x = length(dam_calls), n_workers = 16)
 # Compare the predicted genotypes (from consensus calls) to the actual genotypes of each sample
-founder_background_QC(dam = dam_calls[[45]], sire = sire_calls[[45]])
-bg_QC <- furrr::future_map2(dam_calls, sire_calls, founder_background_QC)
+bg_QC <- furrr::future_map2(dam_calls, 
+                            sire_calls, 
+                            founder_background_QC,
+                            .options = furrr_options(seed = TRUE))
 
 # Keep outputs from the QC that are lists; if QC wasn't performed for a given background, the output was a character vector warning
 founder_background_QC_tr <- bg_QC %>%
@@ -582,6 +585,30 @@ founder_concordance_df_2 <- founder_concordance_df %>%
 founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
                                            levels = c("Autosome","X","Y","M","Other"))
 
-write.fst(founder_concordance_df_2, path = paste0("data/GigaMUGA/gm_founder_concordance_chr_",args[1],".fst"))
-write.fst(clean_founder_consensus_genotypes, path = paste0("data/GigaMUGA/gm_founder_consensus_chr_",args[1],".fst"))
-write.fst(founder_sample_genotypes, path = paste0("data/GigaMUGA/gm_founder_genos_chr_",args[1],".fst"))
+
+if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_sample_concordance/")){
+  fst::write.fst(founder_concordance_df_2, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_concordance/gm_founder_concordance_",args[1],".fst"))
+} else {
+  dir.create(path = "data/GigaMUGA/GigaMUGA_founder_sample_concordance/")
+  fst::write.fst(founder_concordance_df_2, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_concordance/gm_founder_concordance_",args[1],".fst"))
+}
+
+if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/")){
+  fst::write.fst(clean_founder_consensus_genotypes, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/gm_founder_consensus_chr_",args[1],".fst"))
+} else {
+  dir.create(path = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/")
+  fst::write.fst(clean_founder_consensus_genotypes, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/gm_founder_consensus_chr_",args[1],".fst"))
+}
+
+if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/")){
+  fst::write.fst(founder_sample_genotypes, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_genotypes/gm_founder_genos_chr_",args[1],".fst"))
+} else {
+  dir.create(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/")
+  fst::write.fst(founder_sample_genotypes, 
+                 path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_genotypes/gm_founder_genos_chr_",args[1],".fst"))
+}

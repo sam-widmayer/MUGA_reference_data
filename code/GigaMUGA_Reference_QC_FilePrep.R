@@ -4,11 +4,6 @@ require(fst)
 require(tidyr)
 require(stringr)
 require(parallel)
-require(data.table)
-require(multidplyr)
-require(purrr)
-require(furrr)
-require(magrittr)
 require(vroom)
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -26,18 +21,22 @@ callGeno <- function(x){
 }
 writeChrGenos <- function(x,y){
   x$genotype <- apply(x, 1, callGeno)
-  fst::write.fst(x, path = paste0("data/GigaMUGA/gm_genos_chr_",y,".fst"))
+  if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_reference_genotypes/")){
+    fst::write.fst(x, path = paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_",y,".fst"))
+  } else {
+    dir.create(path = "data/GigaMUGA/GigaMUGA_reference_genotypes/")
+    fst::write.fst(x, path = paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/gm_genos_chr_",y,".fst"))
+  }
 }
 
-# print(paste("Number of cores: ",detectCores()))
 
-# # Reading in genotypes
-# if(!file.exists("data/GigaMUGA/GigaMUGA_control_genotypes.fst")){
-#   control_genotypes <- vroom::vroom("data/GigaMUGA/GigaMUGA_control_genotypes.txt",
-#                                     num_threads = parallel::detectCores(),
-#                                     progress = T)
-#   fst::write.fst(control_genotypes, "data/GigaMUGA/GigaMUGA_control_genotypes.fst")
-#   }
+# Reading in genotypes
+if(!file.exists("data/GigaMUGA/GigaMUGA_control_genotypes.fst")){
+  control_genotypes <- vroom::vroom("data/GigaMUGA/GigaMUGA_control_genotypes.txt",
+                                    num_threads = parallel::detectCores(),
+                                    progress = T)
+  fst::write.fst(control_genotypes, "data/GigaMUGA/GigaMUGA_control_genotypes.fst")
+  }
 
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
                             progress = T)
