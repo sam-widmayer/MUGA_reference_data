@@ -8,7 +8,41 @@ editor_options:
   chunk_output_type: console
 ---
 
-Click here to view QC Analyses for:
-1. [MUGA](MUGA_Reference_QC.html)
-2. [MegaMUGA](MegaMUGA_Reference_QC.html)
-3. [GigaMUGA](GigaMUGA_Reference_QC.html)
+## MUGA Genotype Data for Reference Samples and CC/DO Founder Strains
+
+| File Name                                   | Description                                                                                  | Link  |
+|---------------------------------------------|----------------------------------------------------------------------------------------------|-------|
+| **MUGA_sample_metadata.csv**                | Metadata for samples passing QC from reference strains (sample name, sex, strain)            | [TBD] |
+| **MUGA_founder_metadata.csv**               | Metadata for CC/DO founder strain samples passing QC (sample name, sex, strain, letter code) | [TBD] |
+| **MUGA_genotypes.csv.gz**                   | Genotypes for markers passing QC from reference samples                                      | [TBD] |
+| **MUGA_x\_intensities.csv.gz**              | Probe x-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **MUGA_y\_intensities.csv.gz**              | Probe y-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **MUGA_founder_consensus_genotypes.csv.gz** | CC/DO founder strain consensus genotypes for markers passing QC                              | [TBD] |
+| **MUGA_founder_mean_x\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (x-channel) for all markers passing QC       | [TBD] |
+| **MUGA_founder_mean_y\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (y-channel) for all markers passing QC       | [TBD] |
+
+## MegaMUGA Genotype Data for Reference Samples and CC/DO Founder Strains
+
+| File Name                                       | Description                                                                                  | Link  |
+|-------------------------------------------------|----------------------------------------------------------------------------------------------|-------|
+| **MegaMUGA_sample_metadata.csv**                | Metadata for samples passing QC from reference strains (sample name, sex, strain)            | [TBD] |
+| **MegaMUGA_founder_metadata.csv**               | Metadata for CC/DO founder strain samples passing QC (sample name, sex, strain, letter code) | [TBD] |
+| **MegaMUGA_genotypes.csv.gz**                   | Genotypes for markers passing QC from reference samples                                      | [TBD] |
+| **MegaMUGA_x\_intensities.csv.gz**              | Probe x-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **MegaMUGA_y\_intensities.csv.gz**              | Probe y-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **MegaMUGA_founder_consensus_genotypes.csv.gz** | CC/DO founder strain consensus genotypes for markers passing QC                              | [TBD] |
+| **MegaMUGA_founder_mean_x\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (x-channel) for all markers passing QC       | [TBD] |
+| **MegaMUGA_founder_mean_y\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (y-channel) for all markers passing QC       | [TBD] |
+
+## GigaMUGA Genotype Data for Reference Samples and CC/DO Founder Strains
+
+| File Name                                       | Description                                                                                  | Link  |
+|-------------------------------------------------|----------------------------------------------------------------------------------------------|-------|
+| **GigaMUGA_sample_metadata.csv**                | Metadata for samples passing QC from reference strains (sample name, sex, strain)            | [TBD] |
+| **GigaMUGA_founder_metadata.csv**               | Metadata for CC/DO founder strain samples passing QC (sample name, sex, strain, letter code) | [TBD] |
+| **GigaMUGA_genotypes.csv.gz**                   | Genotypes for markers passing QC from reference samples                                      | [TBD] |
+| **GigaMUGA_x\_intensities.csv.gz**              | Probe x-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **GigaMUGA_y\_intensities.csv.gz**              | Probe y-channel intensities from markers passing QC from reference samples                   | [TBD] |
+| **GigaMUGA_founder_consensus_genotypes.csv.gz** | CC/DO founder strain consensus genotypes for markers passing QC                              | [TBD] |
+| **GigaMUGA_founder_mean_x\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (x-channel) for all markers passing QC       | [TBD] |
+| **GigaMUGA_founder_mean_y\_intensities.csv.gz** | CC/DO founder strain-averaged probe intensities (y-channel) for all markers passing QC       | [TBD] |

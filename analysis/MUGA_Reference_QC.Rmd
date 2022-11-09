@@ -458,9 +458,9 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 ```{r Reading in reference genotypes and metadata}
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
-pre_control_genotypes <- data.table::fread("../data/MUGA/vendu.dodata.csv", header = T)
+pre_control_genotypes <- data.table::fread("data/MUGA/vendu.dodata.csv", header = T)
 samples <- unique(colnames(pre_control_genotypes)[-c(1:3)])
-control_genotypes <- data.table::fread("../data/MUGA/vendu.dodata.csv", header = T, skip = 1)
+control_genotypes <- data.table::fread("data/MUGA/vendu.dodata.csv", header = T, skip = 1)
 
 
 tidyMUGAgenos <- function(smp){
@@ -487,7 +487,7 @@ tidy_control_genotypes <- purrr::map(samples, tidyMUGAgenos) %>%
   Reduce(rbind,.) %>%
   dplyr::rename(marker = snpID,
                 genotype = call)
-muga_metadata <- data.table::fread("../data/MUGA/muga_uwisc_v2.csv", header = T)
+muga_metadata <- data.table::fread("data/MUGA/muga_uwisc_v2.csv", header = T)
 ```
 
 ## Marker QC: Searching for missing genotype calls
@@ -1373,40 +1373,40 @@ founder_yints <- founder_mean_ints %>%
   tidyr::pivot_wider(names_from = strain, values_from = y_int)
 
 
-dir.create("../output", showWarnings = F)
-dir.create("../output/MUGA", showWarnings = F)
+dir.create("output", showWarnings = F)
+dir.create("output/MUGA", showWarnings = F)
 
-if(file.exists("../output/MUGA/MUGA_genotypes.csv.gz") == "FALSE"){
-  write.csv(reference_genos_all_samples, file = "../output/MUGA/MUGA_genotypes.csv")
-  system("gzip ../output/MUGA/MUGA_genotypes.csv")
+if(file.exists("output/MUGA/MUGA_genotypes.csv.gz") == "FALSE"){
+  write.csv(reference_genos_all_samples, file = "output/MUGA/MUGA_genotypes.csv")
+  system("gzip output/MUGA/MUGA_genotypes.csv")
 }
-if(file.exists("../output/MUGA/MUGA_x_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_xints_all_samples, file = "../output/MUGA/MUGA_x_intensities.csv")
-  system("gzip ../output/MUGA/MUGA_x_intensities.csv")
+if(file.exists("output/MUGA/MUGA_x_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_xints_all_samples, file = "output/MUGA/MUGA_x_intensities.csv")
+  system("gzip output/MUGA/MUGA_x_intensities.csv")
 }
-if(file.exists("../output/MUGA/MUGA_y_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_yints_all_samples, file = "../output/MUGA/MUGA_y_intensities.csv")
-  system("gzip ../output/MUGA/MUGA_y_intensities.csv")
+if(file.exists("output/MUGA/MUGA_y_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_yints_all_samples, file = "output/MUGA/MUGA_y_intensities.csv")
+  system("gzip output/MUGA/MUGA_y_intensities.csv")
   
 }
-if(file.exists("../output/MUGA/MUGA_sample_metadata.csv") == "FALSE"){
-  write.csv(strain_assignment, file = "../output/MUGA/MUGA_sample_metadata.csv")
+if(file.exists("output/MUGA/MUGA_sample_metadata.csv") == "FALSE"){
+  write.csv(strain_assignment, file = "output/MUGA/MUGA_sample_metadata.csv")
 }
 
-if(file.exists("../output/MUGA/MUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
-  write.csv(final_founder_consensus_genotypes, file = "../output/MUGA/MUGA_founder_consensus_genotypes.csv")
-  system("gzip ../output/MUGA/MUGA_founder_consensus_genotypes.csv")
+if(file.exists("output/MUGA/MUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+  write.csv(final_founder_consensus_genotypes, file = "output/MUGA/MUGA_founder_consensus_genotypes.csv")
+  system("gzip output/MUGA/MUGA_founder_consensus_genotypes.csv")
 }
-if(file.exists("../output/MUGA/MUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_xints, file = "../output/MUGA/MUGA_founder_mean_x_intensities.csv")
-  system("gzip ../output/MUGA/MUGA_founder_mean_x_intensities.csv")
+if(file.exists("output/MUGA/MUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_xints, file = "output/MUGA/MUGA_founder_mean_x_intensities.csv")
+  system("gzip output/MUGA/MUGA_founder_mean_x_intensities.csv")
 }
-if(file.exists("../output/MUGA/MUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_yints, file = "../output/MUGA/MUGA_founder_mean_y_intensities.csv")
-  system("gzip ../output/MUGA/MUGA_founder_mean_y_intensities.csv")
+if(file.exists("output/MUGA/MUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_yints, file = "output/MUGA/MUGA_founder_mean_y_intensities.csv")
+  system("gzip output/MUGA/MUGA_founder_mean_y_intensities.csv")
 }
-if(file.exists("../output/MUGA/MUGA_founder_metadata.csv") == "FALSE"){
-  write.csv(founder_sample_metadata_conc, file = "../output/MUGA/MUGA_founder_metadata.csv")
+if(file.exists("output/MUGA/MUGA_founder_metadata.csv") == "FALSE"){
+  write.csv(founder_sample_metadata_conc, file = "output/MUGA/MUGA_founder_metadata.csv")
 }
 
 

@@ -479,7 +479,7 @@ First I read in the reference sample genotypes, as well as marker annotations fr
 
 ```{r Reading in reference genotypes and metadata}
 # Reading in reference sample genotype data
-control_genotypes <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.genotypes.csv.zip",
+control_genotypes <- suppressWarnings(data.table::fread(cmd = "unzip -cq data/MegaMUGA/control.genotypes.csv.zip",
                                                         check.names = T))
 colnames(control_genotypes)[1] <- "marker"
 
@@ -487,7 +487,7 @@ colnames(control_genotypes)[1] <- "marker"
 colnames(control_genotypes)[which(str_detect(colnames(control_genotypes), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
 
 ## Reading in marker annotations fro Broman, Gatti, & Cornes analysis
-mm_metadata <- data.table::fread("../data/MegaMUGA/mm_uwisc_v2.csv")
+mm_metadata <- data.table::fread("data/MegaMUGA/mm_uwisc_v2.csv")
 ```
 
 ## Marker QC: Searching for missing genotype calls
@@ -615,12 +615,12 @@ We next validated the sexes of each sample using sex chromosome probe intensitie
 
 ```{r Filtering to Chr X Markers}
 ## Reading in genotype intensities
-x_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.X.csv.zip",
+x_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq data/MegaMUGA/control.X.csv.zip",
                                                         check.names = T))
 colnames(x_intensities)[1] <- "marker"
 colnames(x_intensities)[which(str_detect(colnames(x_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
 
-y_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq ../data/MegaMUGA/control.Y.csv.zip",
+y_intensities <- suppressWarnings(data.table::fread(cmd = "unzip -cq data/MegaMUGA/control.Y.csv.zip",
                                                         check.names = T))
 colnames(y_intensities)[1] <- "marker"
 colnames(y_intensities)[which(str_detect(colnames(y_intensities), pattern = "NZO.HiLtJm36511"))] <- "NZO.HILtJm36511"
@@ -1690,40 +1690,40 @@ founder_sample_metadata_conc <- founder_concordance_df_3 %>%
 
 
 
-dir.create("../output", showWarnings = F)
-dir.create("../output/MegaMUGA", showWarnings = F)
+dir.create("output", showWarnings = F)
+dir.create("output/MegaMUGA", showWarnings = F)
 
-if(file.exists("../output/MegaMUGA/MegaMUGA_genotypes.csv.gz") == "FALSE"){
-  write.csv(reference_genos_all_samples, file = "../output/MegaMUGA/MegaMUGA_genotypes.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_genotypes.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_genotypes.csv.gz") == "FALSE"){
+  write.csv(reference_genos_all_samples, file = "output/MegaMUGA/MegaMUGA_genotypes.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_genotypes.csv")
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_x_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_xints_all_samples, file = "../output/MegaMUGA/MegaMUGA_x_intensities.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_x_intensities.csv")  
+if(file.exists("output/MegaMUGA/MegaMUGA_x_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_xints_all_samples, file = "output/MegaMUGA/MegaMUGA_x_intensities.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_x_intensities.csv")  
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_y_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_yints_all_samples, file = "../output/MegaMUGA/MegaMUGA_y_intensities.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_y_intensities.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_y_intensities.csv.gz") == "FALSE"){
+  write.csv(reference_yints_all_samples, file = "output/MegaMUGA/MegaMUGA_y_intensities.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_y_intensities.csv")
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_sample_metadata.csv") == "FALSE"){
-  write.csv(reference_sample_metadata, file = "../output/MegaMUGA/MegaMUGA_sample_metadata.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_sample_metadata.csv") == "FALSE"){
+  write.csv(reference_sample_metadata, file = "output/MegaMUGA/MegaMUGA_sample_metadata.csv")
 }
 
-if(file.exists("../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+if(file.exists("output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
   write.csv(final_founder_consensus_genotypes, 
-            file = "../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
+            file = "output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_mean_x_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_mean_x_ints, file = "output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_mean_y_ints, file = "../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
-  system("gzip ../output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
+  write.csv(founder_mean_y_ints, file = "output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
+  system("gzip output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
 }
-if(file.exists("../output/MegaMUGA/MegaMUGA_founder_metadata.csv") == "FALSE"){
-  write.csv(founder_sample_metadata_conc, file = "../output/MegaMUGA/MegaMUGA_founder_metadata.csv")
+if(file.exists("output/MegaMUGA/MegaMUGA_founder_metadata.csv") == "FALSE"){
+  write.csv(founder_sample_metadata_conc, file = "output/MegaMUGA/MegaMUGA_founder_metadata.csv")
 }
 
 ```
