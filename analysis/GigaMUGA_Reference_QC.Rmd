@@ -7,6 +7,7 @@ output:
     toc_float: true
     toc_collapsed: true
     toc_depth: 3
+    code_folding: hide
 editor_options:
   chunk_output_type: console
 ---
