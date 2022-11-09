@@ -16,3 +16,4 @@ RUN Rscript -e "install.packages('RColorBrewer', dependencies=TRUE, repos='http:
 RUN Rscript -e "install.packages('tictoc', dependencies=TRUE, repos='http://cran.us.r-project.org')"
 RUN Rscript -e "install.packages('vroom', dependencies=TRUE, repos='http://cran.us.r-project.org')"
 RUN Rscript -e "install.packages('fst', dependencies=TRUE, repos='http://cran.us.r-project.org')"
+RUN Rscript -e "install.packages('workflowr', dependencies=TRUE, repos='http://cran.us.r-project.org')"

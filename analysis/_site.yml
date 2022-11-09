@@ -1,0 +1,23 @@
+name: MUGA_reference_data
+output_dir: ../docs
+navbar:
+  title: JAX GeDI Reference Genotype Data Repository
+  left:
+  - text: Home
+    href: index.html
+  - text: MUGA Data QC Overview
+    href: MUGA_Reference_QC.html
+  - text: MegaMUGA QC Overview
+    href: MegaMUGA_Reference_QC.html
+  - text: GigaMUGA QC Overview
+    href: GigaMUGA_Reference_QC.html
+  right:
+  - icon: fab fa-github
+    text: Source code
+    href: https://github.com/sam-widmayer/MUGA_reference_data
+output:
+  workflowr::wflow_html:
+    toc: yes
+    toc_float: yes
+    theme: spacelab
+    highlight: textmate
