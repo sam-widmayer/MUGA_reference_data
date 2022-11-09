@@ -1,5 +1,5 @@
 ---
-title: "Home"
+title: "MUGA Reference Genotypes"
 site: workflowr::wflow_site
 output:
   workflowr::wflow_html:
@@ -8,4 +8,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-Welcome to my research website.
+Click here to view QC Analyses for:
+1. [MUGA](MUGA_Reference_QC.html)
+2. [MegaMUGA](MegaMUGA_Reference_QC.html)
+3. [GigaMUGA](GigaMUGA_Reference_QC.html)

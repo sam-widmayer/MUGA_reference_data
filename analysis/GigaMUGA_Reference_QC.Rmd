@@ -1,11 +1,14 @@
 ---
 title: "Reference Data QC: GigaMUGA"
-date: "`r Sys.Date()`"
+site: workflowr::wflow_site
 output:
-  html_document:
-    toc: TRUE
+  workflowr::wflow_html:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
     toc_depth: 3
-    code_folding: hide
+editor_options:
+  chunk_output_type: console
 ---
 
 # GigaMUGA Annotations
