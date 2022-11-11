@@ -2,7 +2,7 @@
 
 ## Overview
 
-## ![](images/readme_diagram.png)
+## [](readme_diagram.png)
 
 As shown above (and described [here](https://github.com/sam-widmayer/MUGA_reference_data/blob/main/README.md)), GigaMUGA reference genotypes had quality control analyses performed using a series of scripts deployed on the HPC infrastructure at JAX. Here we describe the function and usage of each script in the process of generating GigaMUGA reference genotypes.
 
