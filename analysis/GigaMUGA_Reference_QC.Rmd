@@ -42,6 +42,10 @@ QCtheme <- theme_bw() +
   theme(panel.grid = element_blank(),
         axis.text = element_text(colour = "black"),
         axis.title = element_text(colour = "black"))
+
+###########################################
+# Functions to aid in pulling in QC'd genotypes to be written in last chunk
+###########################################
 writeReferenceGenotypes <- function(founder_file, nonfounder_file){
   if(file.exists(paste0("data/GigaMUGA/",founder_file))){
     founder_sample_genos <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_founder_sample_genotypes/",founder_file)) %>%
@@ -389,6 +393,25 @@ X_concordance_plot <- ggplot(X_concordance, mapping = aes(x = dam,
 ggplotly(X_concordance_plot, tooltip = c("label","text"))
 ```
 
+We identified one sample, GC_15_F which appears to be a strain mixup. Based on the sample name, the sample is predicted to be an F1 hybrid from a cross between a PWK/PhJ female and 129S1/SvImJ male. This sample, however does not group with any other PWK/PhJ-derived samples in our sample dendrogram and, instead, falls in with other NZO/HILtJ samples. Additionally, the strain concordance above indicates that both autosomes and the X chromosome are nearly 50% concordant. This led us to hypothesize that the sample was in fact an (NZO/HILtJx129S1/SvImJ)F1 mouse. We performed an additional check to test this and, as displayed below, we have good evidence that this was indeed the case. We have indicated this switch in all sample metadata files.
+
+```{r}
+GC_15_F_files <- list.files("data/GigaMUGA/GC_15_F_ReSex_Results/")
+GC_15_F_list <- list()
+for(i in 1:length(GC_15_F_files)){
+  GC_15_F_list[[i]] <- vroom::vroom(file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/",GC_15_F_files[[i]])) %>%
+    dplyr::mutate(chr = as.character(chr))
+}
+GC_15_F_concordance_df <- Reduce(dplyr::bind_rows, GC_15_F_list)
+GC_15_F_concordance_df[is.na(GC_15_F_concordance_df)] <- 0
+
+GC_15_F_concordance_summary <- GC_15_F_concordance_df %>%
+  dplyr::group_by(sample, alt_chr, dam, sire, inferred.sex) %>%
+  dplyr::summarise(total.MATCH = sum(MATCH),
+                   total.NO_MATCH = sum(`NO MATCH`),
+                   concordance = total.MATCH/(total.MATCH+total.NO_MATCH))
+DT::datatable(GC_15_F_concordance_summary, escape = FALSE)
+```
 
 
 ## Writing reference files
@@ -439,7 +462,11 @@ reference_genos_list <- furrr::future_map2(.x = founder_sample_geno_files,
 
 # All reference genotypes
 reference_genos_df <- Reduce(dplyr::bind_rows, reference_genos_list)
-
+reference_genos_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
 
 ###############################################
 ## Write Reference Intensities - All Samples ##
@@ -454,7 +481,17 @@ reference_Y_intensities_df <- purrr::transpose(reference_intensities_list)[[2]] 
   purrr::keep(., is.data.frame) %>%
   Reduce(dplyr::bind_rows, .)
 
+reference_X_intensities_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
 
+reference_Y_intensities_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
 
 #################################################
 ## Write Consensus Genotypes - Founder Strains ##
@@ -464,6 +501,12 @@ founder_consensus_genos <- furrr::future_map(.x = founder_consensus_files,
                                              .f = writeFounderConsensusGenotypes, 
                                              .options = furrr_options(seed = TRUE)) %>%
   Reduce(dplyr::bind_rows, .)
+
+founder_consensus_genos %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
 
 
 ####################################
@@ -485,6 +528,12 @@ founder_mean_x_ints <- reference_X_intensities_df %>%
   tidyr::pivot_wider(names_from = strain, values_from = mean_x) %>%
   dplyr::filter(marker %in% founder_consensus_genos$marker)
 
+founder_mean_x_ints %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
 founder_mean_y_ints <- reference_Y_intensities_df %>%
   dplyr::select(marker,founder_samples_strains$sample_id) %>%
   tidyr::pivot_longer(-marker, names_to = "sample_id", values_to = "Y") %>%
@@ -495,6 +544,11 @@ founder_mean_y_ints <- reference_Y_intensities_df %>%
   tidyr::pivot_wider(names_from = strain, values_from = mean_y) %>%
   dplyr::filter(marker %in% founder_consensus_genos$marker)
 
+founder_mean_y_ints %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
 
 ###################################
 ## Write Founder Sample Metadata ##
@@ -524,7 +578,14 @@ founder_metadata <- founderSamples %>%
                                  sire == "WSB/EiJ" ~ "H")) %>%
   tidyr::unite("letter", dam:sire, sep = "") %>%
   dplyr::ungroup() %>%
-  dplyr::select(sample, strain, correct_sex, original_sex, letter)
+  dplyr::select(sample, strain, correct_sex, original_sex, letter) %>%
+  # Individual sample switch
+  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
+                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
+                                 false = strain),
+                letter = if_else(sample == "GC_15_F", 
+                                 true = "EC", 
+                                 false = letter))
 
 reference_meta_nostrain <- predicted.sexes %>%
   dplyr::filter(sample_id %in% colnames(reference_genos_df)[-1]) %>%
@@ -534,7 +595,10 @@ reference_meta_nostrain <- predicted.sexes %>%
                 original_sex = predicted.sex,
                 correct_sex = inferred.sex) %>%
   dplyr::left_join(., founder_metadata %>%
-                     dplyr::select(sample, strain))
+                     dplyr::select(sample, strain)) %>%
+  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
+                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
+                                 false = strain))
 
 unassigned_strains <- reference_meta_nostrain %>%
   dplyr::filter(is.na(strain))

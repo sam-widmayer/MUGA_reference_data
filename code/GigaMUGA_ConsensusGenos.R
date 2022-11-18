@@ -586,6 +586,153 @@ founder_concordance_df_2$alt_chr <- factor(founder_concordance_df_2$alt_chr,
                                            levels = c("Autosome","X","Y","M","Other"))
 
 
+
+# Analysis re-assigning GC_15_F
+founderSamples_GC_15_F <- founderSamples %>%
+  dplyr::filter(sample_id == "GC_15_F")
+founderSamples_GC_15_F$dam <- "NZO/HILtJ"
+
+founder_background_QCGC_15_F <- function(dam, sire){
+  
+  # Extract strain names from genotype objects\
+  dam.df <- data.frame(dam)
+  sire.df <- data.frame(sire)
+  dam_strain <- gsub(colnames(dam.df)[2], pattern = "X", replacement = "")
+  sire_strain <- gsub(colnames(sire.df)[2], pattern = "X", replacement = "")
+  
+  if(dam_strain == sire_strain){
+    print(paste0("Running QC: ", dam_strain))  
+  } else {
+    print(paste0("Running QC: (", dam_strain, "x", sire_strain, ")F1"))  
+  }
+  
+  # Identify samples from supplied strains
+  maternalF1s <- founderSamples_GC_15_F %>%
+    dplyr::mutate(dam = gsub(dam, pattern = "/", replacement = "."),
+                  sire = gsub(sire, pattern = "/", replacement = ".")) %>%
+    dplyr::filter(dam == dam_strain,
+                  sire == sire_strain) %>%
+    dplyr::mutate(sire = as.factor(sire),
+                  dam = as.factor(dam))
+  
+  if(nrow(maternalF1s) == 0){
+    # Some crosses don't exist in reference data, can't be QC'd
+    return("No samples from this cross; skipping")
+  } else {
+    
+    # Remove consensus genotypes for each strains that are N's
+    mom <- dam.df[which(!dam.df[,2] %in% c("H","N")),]
+    dad <- sire.df[which(!sire.df[,2] %in% c("H","N")),]
+    
+    # Form a hypothetical F1 hybrid by combining genotypes from markers that exist in both strains
+    if(dam_strain == sire_strain){
+      cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),], "marker")
+    } else {
+      cross <- dplyr::inner_join(mom[complete.cases(mom),],dad[complete.cases(dad),])
+    }
+    
+    # Predict F1 genotypes from consensus genotypes for each strain
+    predicted.genotypes <- apply(cross, 1, FUN = callGeno)
+    cross$predicted_genotypes <- predicted.genotypes
+    
+    # Gather genotypes for F1 samples and remove bad markers
+    sample_genos <- maternalF1s %>%
+      dplyr::right_join(good_chr_genos,.,by = "sample_id") %>%
+      dplyr::filter(marker %in% mom$marker, 
+                    genotype != "N") %>%
+      dplyr::distinct(marker, sample_id, genotype, .keep_all = TRUE)
+    
+    # Nest genotypes by sample and sex to prepare for calling Chr X genotypes
+    nested_samples <- sample_genos %>%
+      dplyr::group_by(sample_id, inferred.sex) %>%
+      tidyr::nest()
+    
+    final_geno_comp_list <- list()
+    for(i in 1:length(nested_samples$sample_id)){
+      
+      if(args[1] == "M"){
+        # Mt
+        print("Detected Mt")
+        new_predicted_genotypes <- apply(cross, 1, callHemiGeno)
+        new_cross <- cross %>%
+          dplyr::mutate(predicted_genotypes = new_predicted_genotypes)
+        
+        final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+          dplyr::inner_join(., new_cross %>% 
+                              dplyr::select(marker, predicted_genotypes), 
+                            by = "marker") %>%
+          dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                        true = "MATCH",
+                                                        false = "NO MATCH"),
+                        alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                   chr == "X" ~ "X",
+                                                   chr == "Y" ~ "Y",
+                                                   is.na(chr) ~ "Other",
+                                                   TRUE ~ "Autosome"),
+                        alt_chr = as.factor(alt_chr),
+                        sample = nested_samples$sample_id[[i]],
+                        inferred.sex = nested_samples$inferred.sex[[i]])
+      } else if(args[1] == "X" & nested_samples$inferred.sex[[i]] == "m"){
+        print("Detected Male X Chromosome")
+        # Male X Chrs
+        new_predicted_genotypes <- apply(cross, 1, callHemiGeno)
+        new_cross <- cross %>%
+          dplyr::mutate(predicted_genotypes = new_predicted_genotypes)
+        
+        final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+          dplyr::inner_join(., new_cross %>% 
+                              dplyr::select(marker, predicted_genotypes), 
+                            by = "marker") %>%
+          dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                        true = "MATCH",
+                                                        false = "NO MATCH"),
+                        alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                   chr == "X" ~ "X",
+                                                   chr == "Y" ~ "Y",
+                                                   is.na(chr) ~ "Other",
+                                                   TRUE ~ "Autosome"),
+                        alt_chr = as.factor(alt_chr),
+                        sample = nested_samples$sample_id[[i]],
+                        inferred.sex = nested_samples$inferred.sex[[i]])
+      } else {
+        # Autosome
+        print("Detected Female X Chromosome or Autosome")
+        final_geno_comp_list[[i]] <- nested_samples$data[[i]] %>%
+          dplyr::inner_join(., cross %>% 
+                              dplyr::select(marker, predicted_genotypes), 
+                            by = "marker") %>% 
+          dplyr::mutate(matching_genos = dplyr::if_else(genotype == predicted_genotypes,
+                                                        true = "MATCH",
+                                                        false = "NO MATCH"),
+                        alt_chr = dplyr::case_when(chr == "M" ~ "M",
+                                                   chr == "X" ~ "X",
+                                                   chr == "Y" ~ "Y",
+                                                   is.na(chr) ~ "Other",
+                                                   TRUE ~ "Autosome"),
+                        alt_chr = as.factor(alt_chr),
+                        sample = nested_samples$sample_id[[i]],
+                        inferred.sex = nested_samples$inferred.sex[[i]])
+      }
+    }
+    final_geno_comp <- Reduce(rbind,final_geno_comp_list)
+    
+    
+    # Tabulate the percentage of concordant genotypes between theoretical and actual F1 samples
+    geno_comp_summary <- final_geno_comp %>%
+      dplyr::group_by(sample, inferred.sex, alt_chr, matching_genos) %>%
+      dplyr::count() %>%
+      tidyr::pivot_wider(names_from = matching_genos, values_from = n) %>%
+      dplyr::mutate(dam = dam_strain, 
+                    sire = sire_strain,
+                    chr = unique(good_chr_genos$chr))
+    
+    # Return genotypes and their summary statistics
+    return(list(final_geno_comp,geno_comp_summary))
+  }
+}
+GC_15_F_results <- founder_background_QCGC_15_F(dam = `Clean_Calls_NZO/HILtJ`, sire = `Clean_Calls_129S1/SvImJ`)
+
+
 if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_sample_concordance/")){
   fst::write.fst(founder_concordance_df_2, 
                  path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_concordance/gm_founder_concordance_",args[1],".fst"))
@@ -611,4 +758,12 @@ if(dir.exists(paths = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/")){
   dir.create(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/")
   fst::write.fst(founder_sample_genotypes, 
                  path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_genotypes/gm_founder_genos_chr_",args[1],".fst"))
+}
+
+
+if(dir.exists(paths = "data/GigaMUGA/GC_15_F_ReSex_Results")){
+  write.csv(GC_15_F_results[[2]], file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/GC_15_F_",args[1],".csv"), row.names = F)
+} else {
+  dir.create(path = "data/GigaMUGA/GC_15_F_ReSex_Results/")
+  write.csv(GC_15_F_results[[2]], file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/GC_15_F_",args[1],".csv"), row.names = F)
 }
