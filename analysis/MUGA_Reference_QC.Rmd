@@ -43,6 +43,34 @@ QCtheme <- theme_bw() +
         axis.title = element_text(colour = "black"))
 
 ###########################################
+# Wrangling MUGA input genotypes for downstream analysis
+# Inputs:
+# smp = sample names from original reference genotype file header
+# Outputs:
+# tidy data frames of genotypes with sample names attached and unique column headers
+###########################################
+tidyMUGAgenos <- function(smp){
+    # print(smp)
+    meta <- control_genotypes[,1:3]
+    geno_info <- data.frame(control_genotypes)[,which(colnames(pre_control_genotypes) == smp)]
+    if(ncol(geno_info > 8)){
+      # B6 sample is exactly repeated in source data
+      geno_info_1 <- geno_info[,1:8]
+      tidy_geno_info <- cbind(meta, geno_info_1) %>%
+        dplyr::mutate(sample = paste0(smp)) %>%
+        `colnames<-`(c("snpID","Chromosome","Position","call","X","Y","gcScore","theta","r","xRaw","yRaw","sample"))
+      return(tidy_geno_info)
+      
+    } else {
+      tidy_geno_info <- cbind(meta, geno_info) %>%
+        dplyr::mutate(sample = smp) %>%
+        `colnames<-`(c("snpID","Chromosome","Position","call","X","Y","gcScore","theta","r","xRaw","yRaw","sample"))
+      return(tidy_geno_info)  
+    }
+    
+}
+
+###########################################
 # Function designed to recode genotype calls from letter format (i.e. G1, HET, or G2) to numeric format (i.e. 0, 1, 2)
 # Inputs:
 # x = Column of genotype values
@@ -463,27 +491,6 @@ pre_control_genotypes <- data.table::fread("data/MUGA/vendu.dodata.csv", header 
 samples <- unique(colnames(pre_control_genotypes)[-c(1:3)])
 control_genotypes <- data.table::fread("data/MUGA/vendu.dodata.csv", header = T, skip = 1)
 
-
-tidyMUGAgenos <- function(smp){
-    # print(smp)
-    meta <- control_genotypes[,1:3]
-    geno_info <- data.frame(control_genotypes)[,which(colnames(pre_control_genotypes) == smp)]
-    if(ncol(geno_info > 8)){
-      # B6 sample is exactly repeated in source data
-      geno_info_1 <- geno_info[,1:8]
-      tidy_geno_info <- cbind(meta, geno_info_1) %>%
-        dplyr::mutate(sample = paste0(smp)) %>%
-        `colnames<-`(c("snpID","Chromosome","Position","call","X","Y","gcScore","theta","r","xRaw","yRaw","sample"))
-      return(tidy_geno_info)
-      
-    } else {
-      tidy_geno_info <- cbind(meta, geno_info) %>%
-        dplyr::mutate(sample = smp) %>%
-        `colnames<-`(c("snpID","Chromosome","Position","call","X","Y","gcScore","theta","r","xRaw","yRaw","sample"))
-      return(tidy_geno_info)  
-    }
-    
-}
 tidy_control_genotypes <- purrr::map(samples, tidyMUGAgenos) %>% 
   Reduce(rbind,.) %>%
   dplyr::rename(marker = snpID,
@@ -581,7 +588,7 @@ ggplot(no.calls, mapping = aes(x = freq)) +
 
 ### Searching for samples with poor marker representation
 
-In a similar fashion, we calculated the number of reference samples with missing genotypes. Repeated observations of samples/strains with identical names meant that genotype counts for each marker among them couldn't be grouped and tallied, so determining no-call frequency occurred column-wise. Mouse over individual samples to see the number of markers with missing genotypes for each sample.
+We calculated the number of reference samples with missing genotypes. Mouse over individual samples to see the number of markers with missing genotypes for each sample.
 
 ```{r Reference samples with high missingness}
 
@@ -637,27 +644,49 @@ bad_samples <- c("NOD/ShiLtJ-35335 (m)")
 long_intensities <- tidy_control_genotypes %>%
   dplyr::select(sample, marker, Chromosome, Position, genotype, X, Y, theta)
 
-## Joining slimmer intensity files with marker metadata and reducing to markers on sex chromosomes
+## Joining intensity files with marker metadata and reducing to markers on sex chromosomes
 long_XY_intensities <- long_intensities %>%
   dplyr::left_join(., muga_metadata) %>%
   dplyr::filter(Chromosome %in% c("X","Y"),
                 !sample %in% bad_samples)
 
 # Expected output
-#          marker Chromosome Position genotype     X     Y  chr bp_mm10 bp_grcm39   cM_cox strand snp unique unmapped
-# 1: UNC200279739          X  4324915        H 0.745 1.560 <NA>      NA        NA       NA   <NA>  AG  FALSE    FALSE
-# 2: UNC200000454          X  5080366        T 0.903 0.019    X 5503248   5415302 1.131211  minus  AC   TRUE    FALSE
-# 3: UNC200001507          X  5282192        H 1.791 1.417 <NA>      NA        NA       NA   <NA>  AG  FALSE    FALSE
-# 4: UNC200282646          X  5667495        A 0.446 0.010    X 6090377   6002431 1.406192   plus  AG   TRUE    FALSE
-# 5: UNC200880603          X  5938298        G 0.016 0.517    X 6361180   6273234 1.533023  minus  TC   TRUE    FALSE
-# 6: UNC200285015          X  6105555        A 0.998 0.026    X 6528437   6440491 1.611357   plus  AG   TRUE    FALSE
-#                                                 probe strand_flipped
-# 1: ATTCTTTGAATTTGTTCAGTGTCTCTTGTTAGGACTGTACTTTCATTTCT          FALSE
-# 2: AGTGATACATACTCACATTCAGCTTCCAGTGTGATACTGCAGGGTGAAAC          FALSE
-# 3: TATTTTAGTCTATTGTATAGTCCACCTTTCCCCTAGGCCATTGTAAATAC          FALSE
-# 4: AGCAAGACATAATTTCCACATTACTAAGTCAATTAACGTGCAAATATGAC          FALSE
-# 5: ATCTTGTTCAGATGTGTTATCTGGATAGTGCTGGCTTCACAGACTAAGTT          FALSE
-# 6: GCAGCCTGCAAAACACCTTCCAAAACTACAAAAGCTGGCTAACAGAGAGC          FALSE
+#                 sample       marker Chromosome Position genotype     X     Y theta  chr
+#     1:   #1-m-9376 (m) UNC200279739          X  4324915        H 0.745 1.560 0.716 <NA>
+#     2:   #1-m-9376 (m) UNC200000454          X  5080366        T 0.903 0.019 0.013    X
+#     3:   #1-m-9376 (m) UNC200001507          X  5282192        H 1.791 1.417 0.426 <NA>
+#     4:   #1-m-9376 (m) UNC200282646          X  5667495        A 0.446 0.010 0.014    X
+#     5:   #1-m-9376 (m) UNC200880603          X  5938298        G 0.016 0.517  0.98    X
+#    ---                                                                                 
+# 26996: WSBxPWKf003 (f) UNC210001275          Y    38376        N 0.028 0.030  0.52    Y
+# 26997: WSBxPWKf003 (f) UNC210000095          Y   415819        T 1.710 0.808 0.281    Y
+# 26998: WSBxPWKf003 (f) UNC210001366          Y   987513        A 2.216 0.378 0.108    Y
+# 26999: WSBxPWKf003 (f) UNC210000599          Y  1246957        H 0.039 0.056  0.61    Y
+# 27000: WSBxPWKf003 (f) UNC210001613          Y  2638355        G 0.020 1.339  0.99    Y
+#        bp_mm10 bp_grcm39   cM_cox strand snp unique unmapped
+#     1:      NA        NA       NA   <NA>  AG  FALSE    FALSE
+#     2: 5503248   5415302 1.131211  minus  AC   TRUE    FALSE
+#     3:      NA        NA       NA   <NA>  AG  FALSE    FALSE
+#     4: 6090377   6002431 1.406192   plus  AG   TRUE    FALSE
+#     5: 6361180   6273234 1.533023  minus  TC   TRUE    FALSE
+#    ---                                                      
+# 26996:  701933    701933       NA  minus  TC   TRUE    FALSE
+# 26997: 1079376   1079376       NA  minus  AG   TRUE    FALSE
+# 26998: 1731565   1731565       NA  minus  TG   TRUE    FALSE
+# 26999: 1991009   1991009       NA   plus  AG   TRUE    FALSE
+# 27000: 4022770   4022770       NA   plus  AG   TRUE    FALSE
+#                                                     probe strand_flipped
+#     1: ATTCTTTGAATTTGTTCAGTGTCTCTTGTTAGGACTGTACTTTCATTTCT          FALSE
+#     2: AGTGATACATACTCACATTCAGCTTCCAGTGTGATACTGCAGGGTGAAAC          FALSE
+#     3: TATTTTAGTCTATTGTATAGTCCACCTTTCCCCTAGGCCATTGTAAATAC          FALSE
+#     4: AGCAAGACATAATTTCCACATTACTAAGTCAATTAACGTGCAAATATGAC          FALSE
+#     5: ATCTTGTTCAGATGTGTTATCTGGATAGTGCTGGCTTCACAGACTAAGTT          FALSE
+#    ---                                                                  
+# 26996: CGACCCCGACCCAAACTTTTTACAGGCTTATAAAGGCAAAAACCACAAAA           TRUE
+# 26997: CCCCTTCAGTCCTGGGCCATGAACTACAGACTGAGGCTTCACCTTCTCCA          FALSE
+# 26998: ATATGGTCAGTTTTGGAGAAGGTAGTGTAAGGTGCTGAGAAGAAGGTATA          FALSE
+# 26999: CAGAACAGAGGTGTCCACCCTGCCTGGGAGGGCATTTTTGGAGCATCTGA          FALSE
+# 27000: ATTTCATTTGCTCTTCACTGAGTATTGCTGGCCATGCAGTCTAACATTAA          FALSE
 
 ```
 
@@ -699,22 +728,54 @@ prelim.predicted.sexes <- flagged_XY_intensities %>%
                                                  stringr::str_detect(string = sample, pattern = "(m)") == TRUE ~ "m",
                                       TRUE ~ "unknown"))
 ## Output: flagged intensities with preliminary sex predictions and background assignments among F1 hybrids
-#           sample       marker Chromosome Position genotype     X     Y  chr bp_mm10 bp_grcm39   cM_cox strand snp unique unmapped
-# 1: #1-m-9376 (m) UNC200279739          X  4324915        H 0.745 1.560 <NA>      NA        NA       NA   <NA>  AG  FALSE    FALSE
-# 2: #1-m-9376 (m) UNC200000454          X  5080366        T 0.903 0.019    X 5503248   5415302 1.131211  minus  AC   TRUE    FALSE
-# 3: #1-m-9376 (m) UNC200001507          X  5282192        H 1.791 1.417 <NA>      NA        NA       NA   <NA>  AG  FALSE    FALSE
-# 4: #1-m-9376 (m) UNC200282646          X  5667495        A 0.446 0.010    X 6090377   6002431 1.406192   plus  AG   TRUE    FALSE
-# 5: #1-m-9376 (m) UNC200880603          X  5938298        G 0.016 0.517    X 6361180   6273234 1.533023  minus  TC   TRUE    FALSE
-# 6: #1-m-9376 (m) UNC200285015          X  6105555        A 0.998 0.026    X 6528437   6440491 1.611357   plus  AG   TRUE    FALSE
-#                                                 probe strand_flipped marker_flag predicted.sex
-# 1: ATTCTTTGAATTTGTTCAGTGTCTCTTGTTAGGACTGTACTTTCATTTCT          FALSE                         m
-# 2: AGTGATACATACTCACATTCAGCTTCCAGTGTGATACTGCAGGGTGAAAC          FALSE                         m
-# 3: TATTTTAGTCTATTGTATAGTCCACCTTTCCCCTAGGCCATTGTAAATAC          FALSE                         m
-# 4: AGCAAGACATAATTTCCACATTACTAAGTCAATTAACGTGCAAATATGAC          FALSE                         m
-# 5: ATCTTGTTCAGATGTGTTATCTGGATAGTGCTGGCTTCACAGACTAAGTT          FALSE                         m
-# 6: GCAGCCTGCAAAACACCTTCCAAAACTACAAAAGCTGGCTAACAGAGAGC          FALSE                         m
-
-
+#                 sample       marker Chromosome Position genotype     X     Y theta  chr
+#     1:   #1-m-9376 (m) UNC200279739          X  4324915        H 0.745 1.560 0.716 <NA>
+#     2:   #1-m-9376 (m) UNC200000454          X  5080366        T 0.903 0.019 0.013    X
+#     3:   #1-m-9376 (m) UNC200001507          X  5282192        H 1.791 1.417 0.426 <NA>
+#     4:   #1-m-9376 (m) UNC200282646          X  5667495        A 0.446 0.010 0.014    X
+#     5:   #1-m-9376 (m) UNC200880603          X  5938298        G 0.016 0.517  0.98    X
+#    ---                                                                                 
+# 26996: WSBxPWKf003 (f) UNC210001275          Y    38376        N 0.028 0.030  0.52    Y
+# 26997: WSBxPWKf003 (f) UNC210000095          Y   415819        T 1.710 0.808 0.281    Y
+# 26998: WSBxPWKf003 (f) UNC210001366          Y   987513        A 2.216 0.378 0.108    Y
+# 26999: WSBxPWKf003 (f) UNC210000599          Y  1246957        H 0.039 0.056  0.61    Y
+# 27000: WSBxPWKf003 (f) UNC210001613          Y  2638355        G 0.020 1.339  0.99    Y
+#        bp_mm10 bp_grcm39   cM_cox strand snp unique unmapped
+#     1:      NA        NA       NA   <NA>  AG  FALSE    FALSE
+#     2: 5503248   5415302 1.131211  minus  AC   TRUE    FALSE
+#     3:      NA        NA       NA   <NA>  AG  FALSE    FALSE
+#     4: 6090377   6002431 1.406192   plus  AG   TRUE    FALSE
+#     5: 6361180   6273234 1.533023  minus  TC   TRUE    FALSE
+#    ---                                                      
+# 26996:  701933    701933       NA  minus  TC   TRUE    FALSE
+# 26997: 1079376   1079376       NA  minus  AG   TRUE    FALSE
+# 26998: 1731565   1731565       NA  minus  TG   TRUE    FALSE
+# 26999: 1991009   1991009       NA   plus  AG   TRUE    FALSE
+# 27000: 4022770   4022770       NA   plus  AG   TRUE    FALSE
+#                                                     probe strand_flipped marker_flag
+#     1: ATTCTTTGAATTTGTTCAGTGTCTCTTGTTAGGACTGTACTTTCATTTCT          FALSE            
+#     2: AGTGATACATACTCACATTCAGCTTCCAGTGTGATACTGCAGGGTGAAAC          FALSE            
+#     3: TATTTTAGTCTATTGTATAGTCCACCTTTCCCCTAGGCCATTGTAAATAC          FALSE            
+#     4: AGCAAGACATAATTTCCACATTACTAAGTCAATTAACGTGCAAATATGAC          FALSE            
+#     5: ATCTTGTTCAGATGTGTTATCTGGATAGTGCTGGCTTCACAGACTAAGTT          FALSE            
+#    ---                                                                              
+# 26996: CGACCCCGACCCAAACTTTTTACAGGCTTATAAAGGCAAAAACCACAAAA           TRUE        FLAG
+# 26997: CCCCTTCAGTCCTGGGCCATGAACTACAGACTGAGGCTTCACCTTCTCCA          FALSE            
+# 26998: ATATGGTCAGTTTTGGAGAAGGTAGTGTAAGGTGCTGAGAAGAAGGTATA          FALSE            
+# 26999: CAGAACAGAGGTGTCCACCCTGCCTGGGAGGGCATTTTTGGAGCATCTGA          FALSE        FLAG
+# 27000: ATTTCATTTGCTCTTCACTGAGTATTGCTGGCCATGCAGTCTAACATTAA          FALSE            
+#        predicted.sex
+#     1:             m
+#     2:             m
+#     3:             m
+#     4:             m
+#     5:             m
+#    ---              
+# 26996:             f
+# 26997:             f
+# 26998:             f
+# 26999:             f
+# 27000:             f
 
 # Join the sample table with resex information with each sample's strain background from initial sex prediction.
 # Inputs:
@@ -751,7 +812,7 @@ founder_samples <- sample.meta %>%
 # 5: 129S1/SvImJm212 (m)             m FOUNDER
 # 6:         NOD/LtJ (f)             f FOUNDER
 
-
+# Using letter codes for founders to recode the rest of the samples
 remaining_samples <- sample.meta %>%
   dplyr::filter(!sample %in% founder_samples$sample)
 founder_letters <- LETTERS[1:8]
@@ -939,6 +1000,7 @@ ggplotly(mean.x.intensities.by.sex.plot,
 Combining plots of heterozygosity rates of X and Y chromosomes and the sex chromosome probe intensities, we observed four samples that were originally classified as females that were likely male samples, including one named "NODxPWKm004 (f)" displaying proper sample nomenclature for a male sample. We have manually assigned these samples the appropriate sex designation.
 
 ```{r Re-assigning sex}
+# Re-assigning sexes to four samples above
 final.predicted.sex <- prelim.predicted.sexes %>%
   dplyr::mutate(inferred.sex = if_else(condition = sample %in% c("PWK/PhJ (f)",
                                                                  "NODxPWKm004 (f)",
@@ -952,9 +1014,7 @@ final.predicted.sex <- prelim.predicted.sexes %>%
                                                                  "WSB/EiJ (f)"), 
                                        true = T, 
                                        false = F))
-
-
-## Taking the first marker as a sample and tabulating the number of samples for each predicted sex
+# Tabulating sexes of samples
 predicted.sex.table <- final.predicted.sex %>%
   dplyr::filter(marker %in% unique(prelim.predicted.sexes$marker)[1]) %>%
   dplyr::select(sample, inferred.sex) %>%
@@ -963,7 +1023,7 @@ predicted.sex.table <- final.predicted.sex %>%
 
 ```
 
-This captured `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
+This captured `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$inferred.sex == "m"),2]$n` male samples.
 
 ```{r Inferred sex visualization}
 Xchr.int <- final.predicted.sex %>%
@@ -1021,11 +1081,9 @@ ggplotly(mean.x.intensities.by.sex.plot,
          tooltip = c("text","label"))
 ```
 
-
 ### Validating reference sample genetic backgrounds
 
 A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
-
 
 ```{r founder sample dendrogram, fig.width=10, fig.height=10}
 sample.predicted.sexes.df <- final.predicted.sex %>%
@@ -1033,8 +1091,9 @@ sample.predicted.sexes.df <- final.predicted.sex %>%
 
 # Join all genotypes to founder-derived samples, filter away bad markers, and reduce down to unique rows for each sample and marker genotype
 # Inputs: 
-# 1) Founder sample metadata (colnames(all_founder_samples_parents) = "sample"        "dam"           "sire"          "bad_sample"    "inferred.sex"  "resexed"       "bg"            "founder"      "weird.founder"
+# 1) Founder sample metadata
 # 2) All sample genotypes with flag information
+# 3) Annotated genotypes
 founder_sample_genos <- final_founder_samples %>%
   dplyr::left_join(., sample.predicted.sexes.df) %>%
   dplyr::select(-founder) %>%
@@ -1070,12 +1129,17 @@ hc <- hclust(dd, method = "ward.D2")
 ndendcolors <- 3
 dend_colors = c(brewer.pal(ndendcolors,"Paired")) 
 clus8 = cutree(hc, ndendcolors)
-plot(as.phylo(hc), type = "f", cex = 0.8, tip.color = dend_colors[clus8],
-     no.margin = T, label.offset = 1, edge.width = 0.5)
+plot(as.phylo(hc), 
+     type = "f", 
+     cex = 0.8, 
+     tip.color = dend_colors[clus8],
+     no.margin = T, 
+     label.offset = 1, 
+     edge.width = 0.5)
 
 ```
 
-From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain. 
+From here we curated a set of genotypes for each CC/DO founder strain that were fixed across replicate samples from that strain.
 
 ```{r generate founder consensus calls}
 for(f in strict_founder_strains){
@@ -1136,10 +1200,9 @@ founder_sample_metadata <- final_founder_samples %>%
   dplyr::mutate(dam = as.character(dam),
                 sire = as.character(sire),
                 strain = if_else(dam == sire, true = dam, false = "CROSS"),
-                resexed = if_else(predicted.sex != inferred.sex, true = "TRUE", false = "FALSE")) %>% 
-  dplyr::select(-inferred.sex) %>%
-  dplyr::filter(bg == "INBRED", 
-                strain %in% strict_founder_strains)
+                resexed = if_else(predicted.sex != inferred.sex, 
+                                  true = "TRUE", false = "FALSE")) %>% 
+  dplyr::select(-inferred.sex)
 #                 sample         dam        sire predicted.sex founder     bg      strain resexed
 # 1:             A/J (f)         A/J         A/J             f FOUNDER INBRED         A/J   FALSE
 # 2:         A/Jm111 (m)         A/J         A/J             m FOUNDER INBRED         A/J   FALSE
@@ -1154,26 +1217,10 @@ founder_samples_for_ints <- c("marker",founder_sample_metadata$sample)
 founder_intensities <- founder_sample_metadata %>%
   dplyr::left_join(., long_intensities)
 
-# 
-# # Identify consensus calls that have complete data across founders
-# founder_consensus_complete <- filtered_consensus_calls[complete.cases(filtered_consensus_calls),]
-# # Identify consensus calls that have DO NOT have complete data across founders (i.e. maybe some sort of discrepancy among samples contributing to that founder)
-# founder_consensus_incomplete <- filtered_consensus_calls[!complete.cases(filtered_consensus_calls),]
 
 ```
 
-
-
 ```{r fig.width=10, fig.height=5}
-# Assemble a list of predicted genotypes for F1s by combining each founder-specific dataframe of calls
-
-# for(f in strict_founder_strains){
-#   clean_founder_con <- clean_founder_consensus_genotypes %>%
-#     dplyr::ungroup() %>%
-#     dplyr::select(marker, f)
-#   assign(paste0("Clean_Calls_",f), clean_founder_con)
-# }
-
 
 # First form a list of dams that comprise each F1 cross type
 dams <- data.frame(tidyr::expand_grid(strict_founder_strains, strict_founder_strains, .name_repair = "minimal")) %>%
@@ -1229,6 +1276,7 @@ founder_palette <- qtl2::CCcolors
 names(founder_palette) <- strict_founder_strains[c(2,3,1,5,6,4,7,8)]
 founder_palette_2 <- founder_palette
 
+# Plot Autosomal Concordance
 concordance_plot <- ggplot(founder_concordance_df_3, mapping = aes(x = dam, y = concordance, color = dam, fill = sire)) + 
   geom_jitter(shape = 21, width = 0.25) +
   scale_fill_manual(values = founder_palette_2) +
@@ -1236,6 +1284,19 @@ concordance_plot <- ggplot(founder_concordance_df_3, mapping = aes(x = dam, y = 
   ylim(c(0.5,1.05)) + 
   labs(x = "Dam Founder Strain",
        y = "Autosomal Genotype Concordance") + 
+  QCtheme
+ggplotly(concordance_plot)
+
+# Plot X Chromosome Concordance
+concordance_plot <- ggplot(founder_concordance_df_2 %>%
+                             dplyr::filter(alt_chr == "X"), 
+                           mapping = aes(x = dam, y = concordance, color = dam, fill = sire)) + 
+  geom_jitter(shape = 21, width = 0.25) +
+  scale_fill_manual(values = founder_palette_2) +
+  scale_colour_manual(values = founder_palette_2) +
+  ylim(c(0.5,1.05)) + 
+  labs(x = "Dam Founder Strain",
+       y = "X Chromosome Genotype Concordance") + 
   QCtheme
 ggplotly(concordance_plot)
 
@@ -1276,7 +1337,7 @@ good_samples <- good_samples_df$sample
 
 In total, `r nrow(good_markers)` markers and `r length(good_samples)-1` samples passed the QC steps we imposed, and wrote these genotype data and metadata to new reference files.
 
-```{r output files for all samples, eval=FALSE, include=FALSE}
+```{r generating output files, echo=FALSE}
 
 # Generate genotype files for all good samples and all good markers
 reference_genos_all_samples <- tidy_control_genotypes %>%
@@ -1372,8 +1433,11 @@ founder_xints <- founder_mean_ints %>%
 founder_yints <- founder_mean_ints %>%
   dplyr::select(marker, strain, y_int) %>%
   tidyr::pivot_wider(names_from = strain, values_from = y_int)
+```
 
 
+```{r writing output files}
+# Writing output files
 dir.create("output", showWarnings = F)
 dir.create("output/MUGA", showWarnings = F)
 
@@ -1409,6 +1473,5 @@ if(file.exists("output/MUGA/MUGA_founder_mean_y_intensities.csv.gz") == "FALSE")
 if(file.exists("output/MUGA/MUGA_founder_metadata.csv") == "FALSE"){
   write.csv(founder_sample_metadata_conc, file = "output/MUGA/MUGA_founder_metadata.csv")
 }
-
 
 ```
