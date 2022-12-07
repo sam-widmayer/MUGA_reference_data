@@ -638,38 +638,69 @@ reference_sample_metadata <- unassigned_strains %>%
 ## WRITING FILES ##
 ###################
 
-if(file.exists("output/GigaMUGA/GigaMUGA_genotypes.csv.gz") == "FALSE"){
-  dir.create("output/GigaMUGA")
-  write.csv(reference_genos_df, file = "output/GigaMUGA/GigaMUGA_genotypes.csv")
-  system("gzip output/GigaMUGA/GigaMUGA_genotypes.csv")
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_x_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_X_intensities_df, file = "output/GigaMUGA/GigaMUGA_x_intensities.csv")
-  system("gzip output/GigaMUGA/GigaMUGA_x_intensities.csv")  
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_y_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_Y_intensities_df, file = "output/GigaMUGA/GigaMUGA_y_intensities.csv")
-  system("gzip output/GigaMUGA/GigaMUGA_y_intensities.csv")
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_sample_metadata.csv") == "FALSE"){
-  write.csv(reference_sample_metadata, file = "output/GigaMUGA/GigaMUGA_sample_metadata.csv")
-}
 
-if(file.exists("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+  dir.create("output/GigaMUGA")
+  write.csv(reference_genos_df, 
+            file = "output/GigaMUGA/GigaMUGA_genotypes.csv", 
+            row.names = F)
+  if(file.exists("output/GigaMUGA/GigaMUGA_genotypes.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_genotypes.csv.gz")
+  }
+  system("gzip output/GigaMUGA/GigaMUGA_genotypes.csv")
+
+  
+  write.csv(reference_X_intensities_df, 
+            file = "output/GigaMUGA/GigaMUGA_x_intensities.csv",
+            row.names = F)
+  if(file.exists("output/GigaMUGA/GigaMUGA_x_intensities.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_x_intensities.csv.gz")
+  }
+  system("gzip output/GigaMUGA/GigaMUGA_x_intensities.csv")  
+
+
+  write.csv(reference_Y_intensities_df, 
+            file = "output/GigaMUGA/GigaMUGA_y_intensities.csv",
+            row.names = F)
+  if(file.exists("output/GigaMUGA/GigaMUGA_y_intensities.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_y_intensities.csv.gz")
+  }
+  system("gzip output/GigaMUGA/GigaMUGA_y_intensities.csv")
+
+
+  write.csv(reference_sample_metadata, 
+            file = "output/GigaMUGA/GigaMUGA_sample_metadata.csv",
+            row.names = F)
+
+  
   write.csv(founder_consensus_genos, 
-            file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv")
+            file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv",
+            row.names = F)
+  if(file.exists("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")
+  }
   system("gzip output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv")
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_mean_x_ints, file = "output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv")
+  
+
+  write.csv(founder_mean_x_ints, 
+            file = "output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv",
+            row.names = F)
+  if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz")
+  }
   system("gzip output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv")
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_mean_y_ints, file = "output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv")
+
+
+  write.csv(founder_mean_y_ints, 
+            file = "output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv",
+            row.names = F)
+    if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz")){
+    system("rm output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz")
+  }
   system("gzip output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv")
-}
-if(file.exists("output/GigaMUGA/GigaMUGA_founder_metadata.csv") == "FALSE"){
-  write.csv(founder_metadata, file = "output/GigaMUGA/GigaMUGA_founder_metadata.csv")
-}
+
+
+  write.csv(founder_metadata, 
+            file = "output/GigaMUGA/GigaMUGA_founder_metadata.csv",
+            row.names = F)
 
 ```
