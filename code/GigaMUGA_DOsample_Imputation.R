@@ -8,6 +8,7 @@ library(qtl2)
 library(parallel)
 library(fst)
 library(furrr)
+library(ggplot2)
 
 
 # Read in GM reference metadata
@@ -70,7 +71,7 @@ no_call_comp <- dplyr::left_join(GM_reference_no_calls, DO_lifespan_no_calls) %>
 
 
 # Plotting no calls in DO samples against DO founder reference samples
-ggplot(data = no_call_comp[which(no_call_comp$DO_no_call_rate != 0),], mapping = aes(x = GM_no_calls, 
+no_call_plot <- ggplot(data = no_call_comp[which(no_call_comp$DO_no_call_rate != 0),], mapping = aes(x = GM_no_calls, 
                                           y = DO_no_call_rate)) + 
   theme_bw() + 
   geom_point(alpha = 0.2) +
@@ -78,6 +79,7 @@ ggplot(data = no_call_comp[which(no_call_comp$DO_no_call_rate != 0),], mapping =
   theme(panel.grid = element_blank()) + 
   labs(x = "No call rate in GigaMUGA reference samples (%)", 
        y = "No call rate in DO lifespan study (%)")
+ggsave(no_call_plot, filename = "output/GM_no_call_plot.png", width = 8, height = 8)
 
 # Finding the inferred diplotypes at each marker for all DO samples
 GM_reference_no_calls$chr <- as.factor(GM_reference_no_calls$chr)
