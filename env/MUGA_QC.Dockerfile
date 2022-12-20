@@ -19,5 +19,6 @@ RUN Rscript -e "install.packages('fst', dependencies=TRUE, repos='http://cran.us
 RUN R -e "install.packages('remotes', repos='http://cran.us.r-project.org')"
 RUN R -e "install.packages('Rcpp', repos='http://cran.us.r-project.org')"
 RUN R -e "remotes::install_github('rqtl/qtl2fst')"
+RUN R -e "remotes::install_github('rqtl/qtl2convert')"
 RUN Rscript -e "install.packages('workflowr', dependencies=TRUE, repos='http://cran.us.r-project.org')"
 RUN Rscript -e "install.packages('ggplot2', dependencies=TRUE, repos='http://cran.us.r-project.org')"
