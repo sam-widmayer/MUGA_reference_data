@@ -15,6 +15,7 @@
 
 # 2022-12.20
 ################################################################################
+
 options(stringsAsFactors = FALSE)
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -29,6 +30,15 @@ library(qtl2fst)
 
 ##### VARIABLES #####
 
+chr <- as.numeric(args[1])
+
+if(chr == 20){
+  print("Specifying Input Files for Chromosome X")
+} else {
+  print(paste0("Specifying Input Files for Chromosome ",chr))
+}
+
+
 # Input data directory.
 data_dir = '/projects/compsci/vmp/USERS/widmas/MUGA_reference_data/data/GigaMUGA'
 
@@ -36,13 +46,18 @@ data_dir = '/projects/compsci/vmp/USERS/widmas/MUGA_reference_data/data/GigaMUGA
 sample_dir = file.path(data_dir, 'DO_churchill_lifespan_1')
 
 # Output directory for results.
-out_dir  = '/projects/compsci/vmp/USERS/widmas/MUGA_reference_data/output/GigaMUGA'
+out_dir  = '/projects/compsci/vmp/USERS/widmas/MUGA_reference_data/data/GigaMUGA'
 
 # Marker file.
 marker_file = file.path(data_dir, 'gm_uwisc_v2.csv')
 
 # All founders & F1s in tall format.
-founder_all_file  = file.path(data_dir, 'GigaMUGA_reference_genotypes', paste0('gm_genos_chr_',args[1],'.fst'))
+if(chr == 20){
+  founder_all_file  = file.path(data_dir, 'GigaMUGA_reference_genotypes', 'gm_genos_chr_X.fst')
+} else {
+  founder_all_file  = file.path(data_dir, 'GigaMUGA_reference_genotypes', paste0('gm_genos_chr_',chr,'.fst'))
+}
+
 
 # Sample genotypes form DivDB.
 sample_geno_file  = file.path(sample_dir, 'Churchill-churchill2-GigaMUGA_geno.csv')
@@ -74,16 +89,22 @@ ff1 = fst::read_fst(founder_all_file)
 ff1 = ff1 %>%
         select(sample_id, marker, chr, starts_with('allele')) %>%
         filter(str_detect(sample_id, str_c('^(', str_c(codes, collapse = '|'), ')_'))) %>%
-        filter(marker %in% names(map[[args[1]]])) %>%
+        # filter(marker %in% names(map[[chr]])) %>%
         unite(gt, allele1, allele2, sep = '') %>%
         mutate(gt = if_else(gt == 'GC', 'CG', gt),
                gt = if_else(gt == 'TA', 'AT', gt),
                gt = if_else(gt == 'TC', 'CT', gt),
                gt = if_else(gt == 'TG', 'GT', gt)) %>%
         pivot_wider(names_from = sample_id, values_from = gt)
+ff1 = ff1[ff1$marker %in% names(map[[chr]]),]
 
-# We should have only chr 1 markers.
-stopifnot(all(ff1$chr == args[1]))
+# We should have only markers from supplied chromosome
+if(chr == 20){
+  stopifnot(all(ff1$chr == "X"))
+} else {
+  stopifnot(all(ff1$chr == chr))
+}
+
 
 ff1 = ff1 %>%
         select(-chr)
@@ -91,7 +112,7 @@ ff1 = ff1 %>%
 # Remove samples with too many missing calls.
 nc = colMeans(ff1 == '--')
 
-ff1 = ff1[,nc < 0.08]
+ff1 = ff1[,nc < 0.15]
 
 # Create two letter founder codes for the founder/F1 samples.
 # We can name two columns the same in a tibble.
@@ -113,7 +134,8 @@ colnames(sgeno) <- gsub(colnames(sgeno), pattern = "[.]", replacement = "-")
 sgeno[which(is.na(sgeno))] <- "-"
 
 # Read in probs file and get diplotypes.
-probs = readRDS(sample_probs_file)[[1]]
+print("Reading Genotype Probabilities")
+probs = readRDS(sample_probs_file)[[chr]]
 rownames(probs) = str_replace_all(rownames(probs), '^Calico_Life_Sciences_Freund_MURGIGV01_[0-9]+_|_[A-H][0-9]+$', '')
 
 # Synch up all of the datasets (samples and markers).
@@ -122,12 +144,12 @@ sgeno = sgeno[,common_samples]
 probs = probs[common_samples,,]
 stopifnot(all(colnames(sgeno) == rownames(probs)))
 
-common_markers = intersect(names(map[[args[1]]]), rownames(ff1))
+common_markers = intersect(names(map[[chr]]), rownames(ff1))
 common_markers = intersect(common_markers,  rownames(sgeno))
 common_markers = intersect(common_markers,  dimnames(probs)[[3]])
 
-map[[args[1]]] = map[[args[1]]][names(map[[args[1]]]) %in% common_markers]
-common_markers = names(map[[args[1]]])
+map[[chr]] = map[[chr]][names(map[[chr]]) %in% common_markers]
+common_markers = names(map[[chr]])
 ff1      = ff1[common_markers,]
 sgeno    = sgeno[common_markers,]
 probs    = probs[,,common_markers]
@@ -180,6 +202,7 @@ consensus_geno = function(x, cd) {
   
 } # consensus_geno()
 
+print("Imputing Consensus Genotypes")
 founder_consensus = consensus_geno(x = ff1, 
                                    cd = founder_codes)
 founder_consensus = founder_consensus[common_markers,]
@@ -282,7 +305,16 @@ for(m in wh) {
 } # for(m)
 
 # Write chromosome-level founder consensus genotype file
-write.csv(founder_consensus, 
-          file = paste0("output/GigaMUGA/GigaMUGA_founder_consensus_imputed_genotypes_chr", args[1], ".csv"), 
-          quote = F)
+if(chr == 20){
+  print("Writing Chromosome X Consensus Genotypes")
+  write.csv(founder_consensus, 
+            file = file.path(out_dir,"GigaMUGA_founder_consensus_genotypes","GigaMUGA_founder_consensus_imputed_genotypes_chrX.csv"), 
+            quote = F)
+} else {
+  print(paste0("Writing Chromosome ", chr, " Consensus Genotypes"))
+  write.csv(founder_consensus, 
+            file = file.path(out_dir,"GigaMUGA_founder_consensus_genotypes",paste0("GigaMUGA_founder_consensus_imputed_genotypes_chr", chr, ".csv")), 
+            quote = F)
+  
+}
           
