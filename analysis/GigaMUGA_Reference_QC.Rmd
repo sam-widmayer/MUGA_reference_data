@@ -83,9 +83,13 @@ writeReferenceGenotypes <- function(founder_file, nonfounder_file){
 }
 writeFounderConsensusGenotypes <- function(founder_file){
   
-  founder_consensus_genos <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/",founder_file)) %>%
-    dplyr::filter(!marker %in% above.cutoff$marker) # should be clean, but just in case
-  
+  founder_consensus_genos <- read.csv(paste0("data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/",founder_file))
+  rownames(founder_consensus_genos) <- NULL
+  colnames(founder_consensus_genos) <- c("marker",
+                                         "A/J","C57BL/6J","129S1/SvImJ","NOD/ShiLtJ",
+                                         "NZO/HILtJ","CAST/EiJ","PWK/PhJ","WSB/EiJ")
+  founder_consensus_genos %<>%
+    dplyr::filter(!marker %in% above.cutoff$marker)
   return(founder_consensus_genos)
 }
 writeReferenceIntensities <- function(nonfounder_file){
@@ -345,6 +349,9 @@ for(i in 1:length(chr_concordance_files)){
 founder_concordance_df <- Reduce(dplyr::full_join, chr_concordance_list)
 
 founder_concordance_df_3 <- founder_concordance_df %>%
+  dplyr::left_join(., founderSamples %>% 
+                     dplyr::rename(sample = sample_id) %>%
+                     dplyr::select(sample, dam, sire)) %>% 
   dplyr::group_by(sample, alt_chr, dam, sire, inferred.sex) %>%
   dplyr::summarise(total.MATCH = sum(MATCH),
                    total.NO_MATCH = sum(`NO MATCH`),
@@ -399,16 +406,20 @@ We identified one sample, GC_15_F which appears to be a strain mixup. Based on t
 GC_15_F_files <- list.files("data/GigaMUGA/GC_15_F_ReSex_Results/")
 GC_15_F_list <- list()
 for(i in 1:length(GC_15_F_files)){
-  GC_15_F_list[[i]] <- vroom::vroom(file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/",GC_15_F_files[[i]])) %>%
+  GC_15_F_list[[i]] <- read.csv(file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/",GC_15_F_files[[i]])) %>%
     dplyr::mutate(chr = as.character(chr))
 }
 GC_15_F_concordance_df <- Reduce(dplyr::bind_rows, GC_15_F_list)
 GC_15_F_concordance_df[is.na(GC_15_F_concordance_df)] <- 0
 
 GC_15_F_concordance_summary <- GC_15_F_concordance_df %>%
+  dplyr::left_join(., founderSamples %>%
+                     dplyr::rename(sample = sample_id) %>%
+                     dplyr::select(sample, dam, sire)) %>%
+  dplyr::mutate(dam = "NZO/HILtJ") %>% # Sample mislabeled as PWK initially
   dplyr::group_by(sample, alt_chr, dam, sire, inferred.sex) %>%
   dplyr::summarise(total.MATCH = sum(MATCH),
-                   total.NO_MATCH = sum(`NO MATCH`),
+                   total.NO_MATCH = sum(NO.MATCH),
                    concordance = total.MATCH/(total.MATCH+total.NO_MATCH))
 DT::datatable(GC_15_F_concordance_summary, escape = FALSE)
 ```
@@ -442,11 +453,10 @@ bad_samples <- high.n.samples %>%
 ## Write Reference Genotypes - All Samples ##
 #############################################
 
-founder_sample_geno_files <- c(as.list(list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", pattern = "gm_founder_genos_chr_")[1:19]),
-                                  "M",
-                                  "NA",
-                                  list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", pattern = "gm_founder_genos_chr_")[20], 
-                                  "Y")
+founder_sample_geno_files <- c(as.list(list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
+                                                  pattern = "gm_founder_genos_chr_")[1:19]),"M","NA",
+                               list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
+                                          pattern ="gm_founder_genos_chr_")[20],"Y")
 
 nonfounder_sample_geno_files <- as.list(list.files(path = "data/GigaMUGA/GigaMUGA_reference_genotypes/", pattern = "gm_genos_chr_"))
 future::plan(multisession, workers = 16)
@@ -496,10 +506,10 @@ reference_Y_intensities_df %<>%
 #################################################
 ## Write Consensus Genotypes - Founder Strains ##
 #################################################
-founder_consensus_files <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/", pattern = "gm_founder_consensus_chr_")
-founder_consensus_genos <- furrr::future_map(.x = founder_consensus_files, 
-                                             .f = writeFounderConsensusGenotypes, 
-                                             .options = furrr_options(seed = TRUE)) %>%
+founder_consensus_files <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/", 
+                                      pattern = "GigaMUGA_founder_consensus_imputed_genotypes_chr")
+founder_consensus_genos <- purrr::map(.x = founder_consensus_files, 
+                                      .f = writeFounderConsensusGenotypes) %>%
   Reduce(dplyr::bind_rows, .)
 
 founder_consensus_genos %<>%
@@ -507,6 +517,10 @@ founder_consensus_genos %<>%
                      dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
   dplyr::arrange(bp_mm10, cM_cox) %>%
   select(-chr, -cM_cox, -bp_mm10)
+
+for(i in 2:ncol(founder_consensus_genos)){
+  founder_consensus_genos[,i] <- unlist(purrr::transpose(strsplit(founder_consensus_genos[,i],""))[[1]])
+}
 
 
 ####################################
