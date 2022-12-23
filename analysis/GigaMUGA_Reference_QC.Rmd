@@ -63,6 +63,29 @@ writeReferenceGenotypes <- function(founder_file, nonfounder_file){
     
     reference_sample_genos[is.na(reference_sample_genos)] <- "N"
     return(reference_sample_genos)
+  } else if(founder_file %in% c("M","Y")){
+    non_founder_sample_genos_int <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file))
+    if(founder_file == "M"){
+      M_markers <- read.csv("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrM.csv") %>%
+      dplyr::select(marker)
+      M_markers <- M_markers$marker
+      reference_sample_genos <- non_founder_sample_genos_int %>%
+        dplyr::filter(marker %in% M_markers) %>%
+        dplyr::select(sample_id, marker, genotype) %>%
+        dplyr::mutate(genotype = dplyr::if_else(genotype == "-", true = "N", false = genotype)) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = genotype)
+    } else {
+      Y_markers <- read.csv("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrY.csv") %>%
+      dplyr::select(marker)
+      Y_markers <- Y_markers$marker
+      reference_sample_genos <- non_founder_sample_genos_int %>%
+        dplyr::filter(marker %in% Y_markers) %>%
+        dplyr::select(sample_id, marker, genotype) %>%
+        dplyr::mutate(genotype = dplyr::if_else(genotype == "-", true = "N", false = genotype)) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = genotype)
+    }
+    return(reference_sample_genos)
+  
   } else {
     non_founder_sample_genos_int <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
       dplyr::filter(!sample_id %in% bad_samples$sample_id,
@@ -93,7 +116,43 @@ writeFounderConsensusGenotypes <- function(founder_file){
   return(founder_consensus_genos)
 }
 writeReferenceIntensities <- function(nonfounder_file){
+  chr <- strsplit(strsplit(nonfounder_file,"_")[[1]][[4]],"[.]")[[1]][[1]]
   
+  if(chr %in% c("M","Y")){
+    
+    reference_sample_intensities <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
+      dplyr::select(sample_id, marker, X, Y)
+    
+    if(chr == "M"){
+      M_markers <- read.csv("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrM.csv") %>%
+      dplyr::select(marker)
+      M_markers <- M_markers$marker
+      reference_x_intensities <- reference_sample_intensities %>%
+        dplyr::filter(marker %in% M_markers) %>%
+        dplyr::select(-Y) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = X)
+      
+      reference_y_intensities <- reference_sample_intensities %>%
+        dplyr::filter(marker %in% M_markers) %>%
+        dplyr::select(-X) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = Y)
+      
+    } else {
+      Y_markers <- read.csv("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrY.csv") %>%
+      dplyr::select(marker)
+      Y_markers <- Y_markers$marker
+      reference_x_intensities <- reference_sample_intensities %>%
+        dplyr::filter(marker %in% Y_markers) %>%
+        dplyr::select(-Y) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = X)
+      
+      reference_y_intensities <- reference_sample_intensities %>%
+        dplyr::filter(marker %in% Y_markers) %>%
+        dplyr::select(-X) %>%
+        tidyr::pivot_wider(names_from = sample_id, values_from = Y)
+    }
+    
+  } else {
     reference_sample_intensities <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",nonfounder_file)) %>%
       dplyr::filter(!sample_id %in% bad_samples$sample_id,
                     !marker %in% above.cutoff$marker) %>%
@@ -106,11 +165,13 @@ writeReferenceIntensities <- function(nonfounder_file){
     reference_y_intensities <- reference_sample_intensities %>%
       dplyr::select(-X) %>%
       tidyr::pivot_wider(names_from = sample_id, values_from = Y)
-    if(nrow(reference_x_intensities) == 0){
+  }
+  
+  if(nrow(reference_x_intensities) == 0){
       print("NO REFERENCE INTENSITIES")
     } else {
-      return(list(reference_x_intensities, reference_y_intensities)) 
-    }
+      return(list(reference_x_intensities, reference_y_intensities))
+      }
   
 }
 
@@ -463,7 +524,6 @@ future::plan(multisession, workers = 16)
 make_chunks <- furrr:::make_chunks
 make_chunks(n_x = length(founder_sample_geno_files), n_workers = 16)
 
-
 reference_genos_list <- furrr::future_map2(.x = founder_sample_geno_files, 
                                            .y = nonfounder_sample_geno_files,
                                            .f = writeReferenceGenotypes, 
@@ -512,15 +572,26 @@ founder_consensus_genos <- purrr::map(.x = founder_consensus_files,
                                       .f = writeFounderConsensusGenotypes) %>%
   Reduce(dplyr::bind_rows, .)
 
+for(i in 2:ncol(founder_consensus_genos)){
+  founder_consensus_genos[,i] <- unlist(purrr::transpose(strsplit(founder_consensus_genos[,i],""))[[1]])
+}
+
+founder_consensus_genos_Y <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrY.csv") %>%
+  dplyr::select(-X) %>%
+  `colnames<-`(colnames(founder_consensus_genos))
+founder_consensus_genos_M <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrM.csv") %>%
+  dplyr::select(-X) %>%
+  `colnames<-`(colnames(founder_consensus_genos))
+
+founder_consensus_genos %<>%
+  dplyr::bind_rows(., founder_consensus_genos_Y) %>%
+  dplyr::bind_rows(., founder_consensus_genos_M)
+
 founder_consensus_genos %<>%
   dplyr::left_join(., gm_metadata %>%
                      dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
   dplyr::arrange(bp_mm10, cM_cox) %>%
   select(-chr, -cM_cox, -bp_mm10)
-
-for(i in 2:ncol(founder_consensus_genos)){
-  founder_consensus_genos[,i] <- unlist(purrr::transpose(strsplit(founder_consensus_genos[,i],""))[[1]])
-}
 
 
 ####################################
