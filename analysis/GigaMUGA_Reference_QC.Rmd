@@ -1081,7 +1081,13 @@ if(file.exists("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")
   }
 system("gzip output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv")
-  
+write.csv(m_haplos,
+          file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_Mt.csv",
+          row.names = F)
+write.csv(y_haplos,
+          file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_Y.csv",
+          row.names = F)
+
 # Write founder strain-averaged x-channel intensities
 write.csv(founder_mean_x_ints, 
           file = "output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv",
