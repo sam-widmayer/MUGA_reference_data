@@ -741,6 +741,9 @@ founder_consensus_genos %<>%
   dplyr::arrange(bp_mm10, cM_cox) %>%
   select(-chr, -cM_cox, -bp_mm10)
 
+# Change "-" calls to "N"
+founder_consensus_genos[founder_consensus_genos == "-"] <- "N"
+
 
 ####################################
 ## Write Founder Mean Intensities ##
