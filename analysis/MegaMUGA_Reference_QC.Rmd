@@ -1718,7 +1718,6 @@ dir.create("output/MegaMUGA", showWarnings = F)
             row.names = F)
 
 
-
   write.csv(final_founder_consensus_genotypes, 
             file = "output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv", 
             row.names = F)
@@ -1740,6 +1739,6 @@ dir.create("output/MegaMUGA", showWarnings = F)
   write.csv(founder_sample_metadata_conc, 
             file = "output/MegaMUGA/MegaMUGA_founder_metadata.csv", 
             row.names = F)
-}
+
 
 ```
