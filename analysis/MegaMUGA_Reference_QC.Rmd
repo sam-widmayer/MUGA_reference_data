@@ -1694,49 +1694,49 @@ founder_sample_metadata_conc <- founder_concordance_df_3 %>%
 dir.create("output", showWarnings = F)
 dir.create("output/MegaMUGA", showWarnings = F)
 
-if(file.exists("output/MegaMUGA/MegaMUGA_genotypes.csv.gz") == "FALSE"){
+
   write.csv(reference_genos_all_samples, 
             file = "output/MegaMUGA/MegaMUGA_genotypes.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_genotypes.csv")
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_x_intensities.csv.gz") == "FALSE"){
+
+
   write.csv(reference_xints_all_samples, 
             file = "output/MegaMUGA/MegaMUGA_x_intensities.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_x_intensities.csv")  
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_y_intensities.csv.gz") == "FALSE"){
+
+
   write.csv(reference_yints_all_samples, 
             file = "output/MegaMUGA/MegaMUGA_y_intensities.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_y_intensities.csv")
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_sample_metadata.csv") == "FALSE"){
+
+
   write.csv(reference_sample_metadata, 
             file = "output/MegaMUGA/MegaMUGA_sample_metadata.csv", 
             row.names = F)
-}
 
-if(file.exists("output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
+
+
   write.csv(final_founder_consensus_genotypes, 
             file = "output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_founder_consensus_genotypes.csv")
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
+
+
   write.csv(founder_mean_x_ints, 
             file = "output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_founder_mean_x_intensities.csv")
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
+
+
   write.csv(founder_mean_y_ints, 
             file = "output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv", 
             row.names = F)
   system("gzip output/MegaMUGA/MegaMUGA_founder_mean_y_intensities.csv")
-}
-if(file.exists("output/MegaMUGA/MegaMUGA_founder_metadata.csv") == "FALSE"){
+
+
   write.csv(founder_sample_metadata_conc, 
             file = "output/MegaMUGA/MegaMUGA_founder_metadata.csv", 
             row.names = F)
