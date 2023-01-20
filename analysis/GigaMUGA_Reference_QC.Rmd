@@ -16,6 +16,16 @@ editor_options:
 
 ```{r setup, echo=FALSE, include=FALSE}
 knitr::opts_chunk$set(message = FALSE)
+
+#######################################################
+# Markdown to visualize quality control processes for #
+# GigaMUGA reference genotypes ########################
+#######################################################
+
+######################
+# Required packages: #
+######################
+
 # require(tidyverse)
 # ^ this if running locally
 require(fst)
@@ -37,15 +47,82 @@ require(RColorBrewer)
 require(tictoc)
 require(furrr)
 require(vroom)
+
+# Display the date the markdown was last rendered 
 today <- format(Sys.Date(), format="%Y%m%d")
+
+# Use a consistent plotting theme backbone 
 QCtheme <- theme_bw() + 
   theme(panel.grid = element_blank(),
         axis.text = element_text(colour = "black"),
         axis.title = element_text(colour = "black"))
 
+##############################################
+# Function to quickly pull strain names from #
+# non-founder samples ########################
+
+# Inputs:
+# Sample IDs
+
+# Outputs:
+# Character vector of strains
+##############################################
+
+findStrain <- function(x){
+  
+  # Decompose strain from mouse ID for males
+  m_strains <- strsplit(x, split = "m")[[1]]
+  
+  # If the string was actually split using "m" the sample was male
+  if(TRUE %in% str_detect(m_strains, pattern = "X12")){
+    
+    # If there was a 129 or similar mouse with an m in the strain name, some collapsing needs to occur
+    X129_strains <- paste(strsplit(x, split = "m")[[1]][[1]], sep = "m", collapse = "m")
+    return(X129_strains)
+    
+  } else if(length(m_strains) == 1){
+    
+    f_strains <- strsplit(x, split = "f")[[1]][[1]] 
+    return(f_strains)
+  } else {
+    
+    return(m_strains[[1]][[1]])
+  }
+  
+}
+
+
 ###########################################
-# Functions to aid in pulling in QC'd genotypes to be written in last chunk
+# Function designed to recode genotype calls from letter format (i.e. G1, HET, or G2) to numeric format (i.e. 0, 1, 2)
+# Inputs:
+# x = Column of genotype values
+# Outputs:
+# Numeric vector of recoded genotypes
 ###########################################
+
+recodeCalls <- function(x){
+  y <- factor(c(as.matrix(x)))
+  levels(y)[which(levels(y) == "H")] <- 1
+  levels(y)[which(levels(y) != 1)] <- c(0,2)
+  return(as.numeric(as.character(y)))
+}
+
+
+##############################################
+# Function to write GigaMUGA reference #######
+# sample genotypes for a single chromosome ###
+
+# Inputs:
+# 1) Long reference genotypes from just CC/DO 
+# founder samples for each chromosome
+# 2) Long refernence genotypes from all 
+# samples for each chromoosome
+
+# Outputs:
+# Wide genotypes filtered for QC-passing
+# samples and markers for each chromosome
+##############################################
+
 writeReferenceGenotypes <- function(founder_file, nonfounder_file){
   if(file.exists(paste0("data/GigaMUGA/",founder_file))){
     founder_sample_genos <- fst::read.fst(paste0("data/GigaMUGA/GigaMUGA_founder_sample_genotypes/",founder_file)) %>%
@@ -104,6 +181,21 @@ writeReferenceGenotypes <- function(founder_file, nonfounder_file){
     }
   }
 }
+
+
+###############################################
+# Function to write GigaMUGA reference ########
+# consensus genotypes for a single chromosome #
+
+# Input
+# Long CC/DO founder consensus genotypes
+
+# Outputs:
+# Wide CC/DO founder consensus genotypes 
+# filtered for QC-passing samples and markers 
+# for each chromosome
+###############################################
+
 writeFounderConsensusGenotypes <- function(founder_file){
   
   founder_consensus_genos <- read.csv(paste0("data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/",founder_file))
@@ -115,6 +207,26 @@ writeFounderConsensusGenotypes <- function(founder_file){
     dplyr::filter(!marker %in% above.cutoff$marker)
   return(founder_consensus_genos)
 }
+
+
+##############################################
+# Function to write GigaMUGA reference #######
+# sample probe intensities ###################
+
+# Input
+# Probe intensities from all GigaMUGA 
+# reference samples
+
+# Output:
+# List of length two (for each chromosome)
+# 1) data frame with columns of markers, 
+# chromosome, positions, and x-channel
+# intensities
+# 2) data frame with columns of markers, 
+# chromosome, positions, and y-channel
+# intensities
+##############################################
+
 writeReferenceIntensities <- function(nonfounder_file){
   chr <- strsplit(strsplit(nonfounder_file,"_")[[1]][[4]],"[.]")[[1]][[1]]
   
@@ -175,50 +287,24 @@ writeReferenceIntensities <- function(nonfounder_file){
   
 }
 
-###########################################
-# Function to quickly pull strain names from non-founder samples
-# Inputs:
-# Sample IDs
-
-# Outputs:
-# Character vector of strains
-###########################################
-findStrain <- function(x){
-  
-  # Decompose strain from mouse ID for males
-  m_strains <- strsplit(x, split = "m")[[1]]
-  
-  # If the string was actually split using "m" the sample was male
-  if(TRUE %in% str_detect(m_strains, pattern = "X12")){
-    
-    # If there was a 129 or similar mouse with an m in the strain name, some collapsing needs to occur
-    X129_strains <- paste(strsplit(x, split = "m")[[1]][[1]], sep = "m", collapse = "m")
-    return(X129_strains)
-    
-  } else if(length(m_strains) == 1){
-    
-    f_strains <- strsplit(x, split = "f")[[1]][[1]] 
-    return(f_strains)
-  } else {
-    
-    return(m_strains[[1]][[1]])
-  }
-  
-}
-
 ```
 
 ## Loading in data from Sumner analyses
+
 ```{r}
+# Load in output data from GigaMUGA_sampleQC.R
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
 load("data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")
 load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
+
+# Load in GigaMUGA marker annotations
 gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv")
 ```
 
 ## Marker QC: Searching for missing genotype calls
 
 ```{r Markers with high "N" counts among reference samples}
+# Calculate the rate of no calls among all reference samples 
 no.calls <- control_allele_freqs_df %>%
   dplyr::ungroup() %>%
   dplyr::filter(genotype == "N") %>%
@@ -228,14 +314,15 @@ no.calls <- control_allele_freqs_df %>%
   dplyr::select(marker, chr, bp_grcm39, freq) %>%
   dplyr::mutate(chr = as.factor(chr))
 
-## Identifying markers with missing genotypes at a frequency higher than the 95th percentile of "N" frequencies across all markers
+# Determine the 90th percentile of no call rates among all markers
 cutoff <- quantile(no.calls$freq, probs = seq(0,1,0.05))[[19]]
 ```
 
 Of `r length(unique(as.factor(control_allele_freqs_df$marker)))` markers, `r nrow(no.calls)` failed to genotype at least one sample, and `r nrow(above.cutoff)` markers failed to genotype at least `r cutoff*100`% of samples.
 
 ```{r Plotting no calls, echo=FALSE}
-# Distribution of N frequencies across all markers. Dotted line indicates the 95th percentile of N frequencies (cutoff).
+# Plot the distribution of N frequencies across all markers. 
+# Dotted line indicates the cutoff calculated above.
 ggplot(no.calls, mapping = aes(x = freq)) + 
   geom_histogram(bins = 100) +
   scale_x_continuous(breaks = seq(0,1,0.1)) + 
@@ -253,8 +340,10 @@ In a similar fashion, we calculated the number of reference samples with missing
 
 ```{r Reference samples with high missingness}
 
-## Interactive plot of the number of missing genotypes for each sample.
+# Determine the 95th percentile of no calls identified among all samples
 bad_sample_cutoff <- quantile(n.calls.strains.df$n.no.calls, probs = seq(0,1,0.05))[20]
+
+# Plot the number of no calls identified in each sample across all markers
 sampleQC <- ggplot(n.calls.strains.df, 
                    mapping = aes(x = reorder(sample_id,n.no.calls), 
                                  y = n.no.calls,
@@ -276,7 +365,7 @@ We next validated the sexes of each sample using sex chromosome probe intensitie
 
 ```{r Preliminary sex prediction}
 
-## Tabulating the number of samples for each predicted sex
+## Tabulate the number of samples per predicted sex
 predicted.sex.table <- predicted.sexes %>%
   dplyr::group_by(predicted.sex) %>%
   dplyr::count() 
@@ -286,7 +375,8 @@ predicted.sex.table <- predicted.sexes %>%
 This captured `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "f"),2]$n` female samples, `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "m"),2]$n` male samples, leaving `r predicted.sex.table[which(predicted.sex.table$predicted.sex == "unknown"),2]$n` samples of unknown predicted sex from nomenclature alone.
 
 ```{r Predicted sex table, eval=FALSE, include=FALSE}
-# Table of samples for which sex could not be predicted from sample name alone. Using one marker is fine as an example as the sample info for each marker is identical.
+
+# View samples with unknown sexes prior to clustering
 predicted.sexes %>%
   dplyr::filter(predicted.sex == "unknown")
 ```
@@ -294,6 +384,8 @@ predicted.sexes %>%
 After predicting the sexes of the vast majority of reference samples, we visualized the average probe intensity among X Chromosome markers for each sample, labeling them by predicted sex. Samples colored black were unabled to have their sex inferred by the sample name, but cluster well with mice for which sex could be inferred. Conversely, some samples' predicted sex is discordant with X and Y Chromosome marker intensities (i.e. blue samples that cluster with mostly orange samples, and vice versa). Mouse over individual dots to view the sample, as well as whether it was flagged for having many markers with missing genotype information. In many cases, pulling substrings of sample names as the sex of the sample was too sensitive and misclassified samples.
 
 ```{r Predicted sex visualization}
+
+# Generate a plotting palette for each predicted sex (including unknown)
 predicted.sex.plot.palettes <- sex.chr.intensities %>%
   dplyr::ungroup() %>%
   dplyr::distinct(sample_id, predicted.sex, high_missing_sample) %>%
@@ -303,6 +395,8 @@ predicted.sex.plot.palettes <- sex.chr.intensities %>%
 predicted.sex.palette <- predicted.sex.plot.palettes$predicted.sex.palette
 names(predicted.sex.palette) <- predicted.sex.plot.palettes$predicted.sex
 
+# Plot the Y Chromosome probe intensities against 
+# the sum of the average X and Y Chromosome probe intensities
 mean.x.intensities.by.sex.plot <- sex.chr.intensities %>%
   dplyr::mutate(high_missing_sample = dplyr::if_else(high_missing_sample == "FLAG", 
                                                      true = "Bad Samples", 
@@ -320,10 +414,12 @@ ggplotly(mean.x.intensities.by.sex.plot,
 
 ```
 
-Because the split between inferred sexes of good samples was so distinct, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
+Because the split between inferred sexes of good samples was so distinct for good samples, we used k-means clustering to quickly match the clusters to sexed samples and assign or re-assign sexes to samples with unknown or apparently incorrect sex information, respectively. Samples highlighted above were also re-evaluated using strain-specific marker information.
 
-```{r kmeans clustering}
-# Prints a table of all samples with an option to view whether a sample had its sex redesignated.
+```{r sex check summary}
+
+# Add a column to indicate whether a sample was reassigned a sex 
+# based on probe intensities
 reSexed_samples_table <- reSexed_samples %>%
   dplyr::mutate(resexed = predicted.sex != inferred.sex)
 reSexed_samples_table %>% 
@@ -335,7 +431,9 @@ reSexed_samples_table %>%
 The plot below demonstrates that this clustering technique does a pretty good job at capturing the information we want. Moving forward with sample QC we used the reassigned inferred sexes of the samples.
 
 ```{r kmeans plotting}
-# Interactive scatter plot of intensities similar to above, but recolors and outlines samples based on redesignated sexes.
+
+# Interactive scatter plot of intensities similar to above, but recolors 
+# and outlines samples based on redesignated sexes.
 reSexed.plot <- ggplot(reSexed_samples_table %>%
                          dplyr::arrange(inferred.sex),
                        mapping = aes(x = mean.x.chr.int, 
@@ -348,52 +446,64 @@ reSexed.plot <- ggplot(reSexed_samples_table %>%
   scale_colour_manual(values =  predicted.sex.palette) +
   scale_fill_manual(values = predicted.sex.palette) +
   QCtheme
-
 ggplotly(reSexed.plot, 
          tooltip = c("text","label"))
 ```
 
-Visualizing the corrected sex assignments, we can see two samples that stand out of the clusters: FAM and JAXMP_cookii_TH_BC19281. Because the X and Y probe intensities were supplied to k-means clustering independently in this datasest and the values for each channel were intermediate in this sample, FAM was predicted as female using the y channel and male using the x channel data. Because FAM is not a CC/DO founder or a sample representative of non-musculus species, we assigned this sample to the  "unknown" sex category. JAXMP_cookii_TH_BC19281 clustered with both sexes in a similar fashion, but because of genetic divergence between its genome and the mouse reference genome from which probes were designed, the irregular probe intensity data is not unexpected. For this reason, and the Y channel data being much more consistent with female sample, we categorized this sample as female.
+Visualizing the corrected sex assignments, we can see two samples that stand out of the clusters: FAM and JAXMP_cookii_TH_BC19281. Because the X and Y probe intensities were supplied to k-means clustering independently in this datasest and the values for each channel were intermediate in this sample, FAM was predicted as female using the y channel and male using the x channel data. Because FAM is not a CC/DO founder or a sample representative of non-musculus species, we assigned this sample to the "unknown" sex category. JAXMP_cookii_TH_BC19281 clustered with both sexes in a similar fashion, but because of genetic divergence between its genome and the mouse reference genome from which probes were designed, the irregular probe intensity data is not unexpected. For this reason, and the Y channel data being much more consistent with female sample, we categorized this sample as female.
 
 ### Validating reference sample genetic backgrounds
 
 A key component of sample QC for our purposes is knowing that markers that we expect to deliver the consensus genotype (*i.e.* in a cross) actually provide us the correct strain information and allow us to correctly infer haplotypes.
 
 ```{r founder sample breakdown}
-# Count up samples for each founder and resulting cross and display a table
+
+# Display a table for all samples derived from CC/DO founders
 # Dam names = row names; Sire name = column names
 founder_sample_table <- founderSamples %>%
   dplyr::group_by(dam,sire) %>%
   dplyr::count() %>%
   tidyr::pivot_wider(names_from = sire, values_from = n)
 DT::datatable(founder_sample_table, escape = FALSE, 
-              options = list(columnDefs = list(list(width = '20%', targets = c(8)))))
+              options = list(columnDefs = list(list(width = '20%', 
+                                                    targets = c(8)))))
 ```
 
 From the table, we can see that all possible pairwise combinations of CC/DO founder strains are represented, with the exception of (NZO/HILtJxCAST/EiJ)F1 and (NZO/HILtJxPWK/PhJ)F1. These missing samples could be interesting; these two crosses have been previously noted as "reproductively incompatible" in the [literature](https://link.springer.com/article/10.1007/s00335-008-9135-8). We constructed a rough dendrogram from good marker genotypes to determine whether samples cluster according to known relationships among founder strains. Edge colors represent rough clustering into six groups - three of which contain samples derived from wild-derived founder strains and their F1 hybrids with other founder strains.
 
-
 ```{r founder sample dendrogram, fig.width=10, fig.height=10}
-recoded_wide_geno_files <- list.files("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos//", pattern = "gm_widegenos_chr")
+
+# File paths for wide reference genotypes in numerical genotype coding
+# (output from GigaMUGA_FounderDendGenos.R)
+recoded_wide_geno_files <- list.files("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos//", 
+                                      pattern = "gm_widegenos_chr")
+
+# Read wide reference genotypes
 recoded_wide_sample_genos_list <- list()
 for(i in 1:length(recoded_wide_geno_files)){
-  recoded_wide_sample_genos_list[[i]] <- fst::read.fst(path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/",recoded_wide_geno_files[[i]]))
+  recoded_wide_sample_genos_list[[i]] <- fst::read.fst(
+    path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_dendrogram_genos/",
+                  recoded_wide_geno_files[[i]]))
 }
-recoded_wide_sample_genos <- Reduce(dplyr::bind_cols,recoded_wide_sample_genos_list)
+recoded_wide_sample_genos <- Reduce(dplyr::bind_cols,
+                                    recoded_wide_sample_genos_list)
+
+# Assign sample names as row names
 sample_id_cols <- recoded_wide_sample_genos %>%
   dplyr::select(contains("sample_id"))
 recoded_wide_sample_genos_nosamps <- recoded_wide_sample_genos %>%
   dplyr::select(-contains("sample_id"))
 rownames(recoded_wide_sample_genos_nosamps) <- sample_id_cols[,1]
 
-# Scaling the genotype matrix, then calculating euclidean distance between all samples
+# Scale the genotype matrix, then calculate 
+# euclidean distance between all samples
 dd <- dist(scale(recoded_wide_sample_genos_nosamps), method = "euclidean")
 hc <- hclust(dd, method = "ward.D2")
 
-# Plotting sample distances as a dendrogram
-dend_colors = c("slateblue", # classical strains
+# Plot sample distances as a dendrogram
+dend_colors = c("slateblue",
                 "blue", 
-                qtl2::CCcolors[6:8]) # official colors for wild-derived CC/DO founder strains
+                qtl2::CCcolors[6:8])
 clus8 = cutree(hc, 5)
 plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
      no.margin = T, label.offset = 1, edge.width = 0.5)
@@ -402,13 +512,19 @@ plot(as.phylo(hc), type = "f", cex = 0.5, tip.color = dend_colors[clus8],
 From here we curated a set of consensus genotypes for each CC/DO founder strain by identifying alleles that were fixed across replicate samples from each founder strain. Where there were discrepancies or missing genotypes among these samples, we used reconstructed haplotypes from over 950 DO mice to impute the genotypes for these sites. The consensus genotypes for intersecting markers between two founder strains were combined ("crossed") to form predicted genotypes for each F1 hybrid of CC/DO founders. Then, the genotypes of each CC/DO founder F1 hybrid were compared directly to what was predicted, and the concordance shown below is the proportion of markers of each individual that match this prediction.
 
 ```{r fig.width=10, fig.height=5}
+
+# Concordance file paths
+# (output from GigaMUGA_ConsensusGenos.R)
 chr_concordance_files <- list.files("data/GigaMUGA/GigaMUGA_founder_sample_concordance/")
+
+# Read in concordance results from each chromosome and combine into a df
 chr_concordance_list <- list()
 for(i in 1:length(chr_concordance_files)){
   chr_concordance_list[[i]] <- fst::read.fst(path = paste0("data/GigaMUGA/GigaMUGA_founder_sample_concordance/",chr_concordance_files[[i]]))
 }
 founder_concordance_df <- Reduce(dplyr::full_join, chr_concordance_list)
 
+# Join founder sample metadata and calculate concordance percentages
 founder_concordance_df_3 <- founder_concordance_df %>%
   dplyr::left_join(., founderSamples %>% 
                      dplyr::rename(sample = sample_id) %>%
@@ -418,13 +534,17 @@ founder_concordance_df_3 <- founder_concordance_df %>%
                    total.NO_MATCH = sum(`NO MATCH`),
                    concordance = total.MATCH/(total.MATCH+total.NO_MATCH))
   
+# Subset into autosomal concordance metrics
 auto_concordance <- founder_concordance_df_3 %>% 
   dplyr::filter(alt_chr == "Autosome")
+
+# Subset into Chromosome X concordance metrics
 X_concordance <- founder_concordance_df_3 %>% 
   dplyr::filter(alt_chr == "X")
+
+# Plot autosomal concordance results interactively
 founder_palette <- qtl2::CCcolors
 names(founder_palette) <- unique(founderSamples$dam)
-
 auto_concordance_plot <- ggplot(auto_concordance, mapping = aes(x = dam, 
                                                           y = concordance, 
                                                           color = dam, 
@@ -434,7 +554,6 @@ auto_concordance_plot <- ggplot(auto_concordance, mapping = aes(x = dam,
   geom_jitter(shape = 21, width = 0.25) +
   scale_fill_manual(values = founder_palette) +
   scale_colour_manual(values = founder_palette) +
-  # ylim(c(0.5,1.05)) + 
   labs(x = "Dam Founder Strain",
        y = "Autosomal Genotype Concordance") +   
   facet_grid(.~inferred.sex) +
@@ -442,6 +561,7 @@ auto_concordance_plot <- ggplot(auto_concordance, mapping = aes(x = dam,
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
 ggplotly(auto_concordance_plot, tooltip = c("label", "text"))
 
+# Plot Chromosome X concordance results interactively
 X_concordance_plot <- ggplot(X_concordance, mapping = aes(x = dam, 
                                                           y = concordance, 
                                                           color = dam, 
@@ -451,20 +571,22 @@ X_concordance_plot <- ggplot(X_concordance, mapping = aes(x = dam,
   geom_jitter(shape = 21, width = 0.25) +
   scale_fill_manual(values = founder_palette) +
   scale_colour_manual(values = founder_palette) +
-  # ylim(c(0.5,1.05)) + 
   labs(x = "Dam Founder Strain",
        y = "X Chromosome Genotype Concordance") +
   facet_grid(.~inferred.sex) +
   QCtheme + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) 
-  
 ggplotly(X_concordance_plot, tooltip = c("label","text"))
 ```
 
 We identified one sample, GC_15_F which appears to be a strain mixup. Based on the sample name, the sample is predicted to be an F1 hybrid from a cross between a PWK/PhJ female and 129S1/SvImJ male. This sample, however does not group with any other PWK/PhJ-derived samples in our sample dendrogram and, instead, falls in with other NZO/HILtJ samples. Additionally, the strain concordance above indicates that both autosomes and the X chromosome are nearly 50% concordant. This led us to hypothesize that the sample was in fact an (NZO/HILtJx129S1/SvImJ)F1 mouse. We performed an additional check to test this and, as displayed below, we have good evidence that this was indeed the case. We have indicated this switch in all sample metadata files.
 
-```{r}
+```{r switching sample GC_15}
+
+# Path to GC_15_F concordance results
 GC_15_F_files <- list.files("data/GigaMUGA/GC_15_F_ReSex_Results/")
+
+# Read in GC_15_F concordance results
 GC_15_F_list <- list()
 for(i in 1:length(GC_15_F_files)){
   GC_15_F_list[[i]] <- read.csv(file = paste0("data/GigaMUGA/GC_15_F_ReSex_Results/",GC_15_F_files[[i]])) %>%
@@ -473,18 +595,432 @@ for(i in 1:length(GC_15_F_files)){
 GC_15_F_concordance_df <- Reduce(dplyr::bind_rows, GC_15_F_list)
 GC_15_F_concordance_df[is.na(GC_15_F_concordance_df)] <- 0
 
+# Join sample metadata to GC_15_F concordance
 GC_15_F_concordance_summary <- GC_15_F_concordance_df %>%
   dplyr::left_join(., founderSamples %>%
                      dplyr::rename(sample = sample_id) %>%
                      dplyr::select(sample, dam, sire)) %>%
-  dplyr::mutate(dam = "NZO/HILtJ") %>% # Sample mislabeled as PWK initially
+  # Explicitly switch the dam genetic background
+  dplyr::mutate(dam = "NZO/HILtJ") %>%
   dplyr::group_by(sample, alt_chr, dam, sire, inferred.sex) %>%
+  # Calculate concordance
   dplyr::summarise(total.MATCH = sum(MATCH),
                    total.NO_MATCH = sum(NO.MATCH),
                    concordance = total.MATCH/(total.MATCH+total.NO_MATCH))
+
+# Display data table of autosomal and Chr X concordance results
 DT::datatable(GC_15_F_concordance_summary, escape = FALSE)
 ```
 
+In the chunk below, all reference genotype files are prepared for writing.
+
+```{r prepping output files}
+
+# Filter out samples from non-musculus species from bad sample list
+bad_samples <- high.n.samples %>%
+  dplyr::filter(!sample_id %in% c("JAXMP_caroli_UNK_BC21325",
+                                  "JAXMP_minu_KE_BC24327",
+                                  "JAXMP_minu_KE_BC24339",
+                                  "JAXMP_pahari_TH_BC21314"))
+
+#############################################
+## Write Reference Genotypes - All Samples ##
+#############################################
+
+# File paths for reference genotypes of each chromosome for CC/DO founder samples
+founder_samp_genos_chr1_19 <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
+                                         pattern = "gm_founder_genos_chr_")[1:19]
+founder_samp_genos_chrX <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
+                                          pattern ="gm_founder_genos_chr_")[20]
+founder_sample_geno_files <- c(as.list(founder_samp_genos_chr1_19),"M","NA",founder_samp_genos_chrX,"Y")
+
+# File paths for reference genotypes of each chromosome for all samples
+nonfounder_sample_geno_files <- as.list(list.files(path = "data/GigaMUGA/GigaMUGA_reference_genotypes/", 
+                                                   pattern = "gm_genos_chr_"))
+
+# Establish furrr parallelization plan
+future::plan(multisession, workers = 16)
+make_chunks <- furrr:::make_chunks
+make_chunks(n_x = length(founder_sample_geno_files), n_workers = 16)
+# Read in and filter reference genotypes for each chromosome to good samples and markers
+reference_genos_list <- furrr::future_map2(.x = founder_sample_geno_files, 
+                                           .y = nonfounder_sample_geno_files,
+                                           .f = writeReferenceGenotypes, 
+                                      .options = furrr_options(seed = TRUE)) %>%
+  purrr::discard(., is.character)
+
+# Make one df with all reference genotypes
+reference_genos_df <- Reduce(dplyr::bind_rows, reference_genos_list)
+
+# Join metadata to reference genotypes and use it to order markers by build 39
+# genetic and physical position
+reference_genos_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+###############################################
+## Write Reference Intensities - All Samples ##
+###############################################
+
+# Read in probe intensities for each chromosome for all reference samples
+# Creates a list of two-element lists (x- and y-channel probe intensities)
+reference_intensities_list <- furrr::future_map(.x = nonfounder_sample_geno_files, 
+                                                .f = writeReferenceIntensities, 
+                                                .options = furrr_options(seed = TRUE))
+
+# Transpose the list to create a two element list of 23 elements each
+reference_intensities_list_tr <- purrr::transpose(reference_intensities_list)
+
+# Extract first element (x-channel intensities for each chr) and combine into a df
+reference_X_intensities_df <- reference_intensities_list_tr[[1]] %>%
+  purrr::keep(., is.data.frame) %>%
+  Reduce(dplyr::bind_rows, .)
+
+# Extract first element (y-channel intensities for each chr) and combine into a df
+reference_Y_intensities_df <- reference_intensities_list_tr[[2]] %>%
+  purrr::keep(., is.data.frame) %>%
+  Reduce(dplyr::bind_rows, .)
+
+# Join metadata to intensities and use it to order markers by build 39
+# genetic and physical position
+reference_X_intensities_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+reference_Y_intensities_df %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+
+#################################################
+## Write Consensus Genotypes - Founder Strains ##
+#################################################
+
+# File paths for consensus genotypes of each chromosome for CC/DO founder strains
+founder_consensus_files <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/", 
+                                      pattern = "GigaMUGA_founder_consensus_imputed_genotypes_chr")
+
+# Read in founder consensus genotypes and combine into one df
+founder_consensus_genos <- purrr::map(.x = founder_consensus_files, 
+                                      .f = writeFounderConsensusGenotypes) %>%
+  Reduce(dplyr::bind_rows, .)
+
+# Convert consensus genotypes to single letter genotypes
+# All genotypes homozygous from script that generates them
+for(i in 2:ncol(founder_consensus_genos)){
+  founder_consensus_genos[,i] <- unlist(purrr::transpose(strsplit(founder_consensus_genos[,i],""))[[1]])
+}
+
+# Read in high-quality Y chromosome genotypes
+founder_consensus_genos_Y <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrY.csv") %>%
+  dplyr::select(-X) %>%
+  `colnames<-`(colnames(founder_consensus_genos))
+
+# Read in high-quality Mt genotypes
+founder_consensus_genos_M <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrM.csv") %>%
+  dplyr::select(-X) %>%
+  `colnames<-`(colnames(founder_consensus_genos))
+
+
+# Join Chr Y and Mt genotypes to the rest of the consensus genotypes
+founder_consensus_genos %<>%
+  dplyr::bind_rows(., founder_consensus_genos_Y) %>%
+  dplyr::bind_rows(., founder_consensus_genos_M)
+
+# Join with marker metadata, arrange by genetic and physical position
+founder_consensus_genos %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+# Change "-" calls to "N"
+founder_consensus_genos[founder_consensus_genos == "-"] <- "N"
+
+
+####################################
+## Write Founder Mean Intensities ##
+####################################
+
+# Filter founder sample metadata to samples from founders (not F1s)
+founder_samples_strains <- founderSamples %>%
+  dplyr::filter(bg == "INBRED") %>%
+  dplyr::distinct(sample_id, dam) %>%
+  dplyr::rename(strain = dam)
+
+# Make x-channel intensities df long
+founder_mean_x_ints <- reference_X_intensities_df %>%
+  dplyr::select(marker,founder_samples_strains$sample_id) %>%
+  tidyr::pivot_longer(-marker, names_to = "sample_id", values_to = "X") %>%
+  # Join founder sample metadata and remove null intensities
+  dplyr::left_join(., founder_samples_strains) %>% 
+  dplyr::filter(!is.na(X)) %>%
+  # Calculate the average x-channel intensity for 
+  # each marker among all of the same founder
+  dplyr::group_by(marker, strain) %>%
+  dplyr::summarise(mean_x = mean(X)) %>%
+  # Make df wide again
+  tidyr::pivot_wider(names_from = strain, values_from = mean_x) %>%
+  # Make sure that intensity file contains only markers from 
+  # consensus file
+  dplyr::filter(marker %in% founder_consensus_genos$marker)
+
+# Arrange x-channel intensity file by genetic and physical position
+founder_mean_x_ints %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+# Same process as x-channel intensities for y-channel intensities
+founder_mean_y_ints <- reference_Y_intensities_df %>%
+  dplyr::select(marker,founder_samples_strains$sample_id) %>%
+  tidyr::pivot_longer(-marker, names_to = "sample_id", values_to = "Y") %>%
+  dplyr::left_join(., founder_samples_strains) %>% 
+  dplyr::filter(!is.na(Y)) %>%
+  dplyr::group_by(marker, strain) %>%
+  dplyr::summarise(mean_y = mean(Y)) %>%
+  tidyr::pivot_wider(names_from = strain, values_from = mean_y) %>%
+  dplyr::filter(marker %in% founder_consensus_genos$marker)
+founder_mean_y_ints %<>%
+  dplyr::left_join(., gm_metadata %>%
+                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
+  dplyr::arrange(bp_mm10, cM_cox) %>%
+  select(-chr, -cM_cox, -bp_mm10)
+
+###################################
+## Write Founder Sample Metadata ##
+###################################
+
+# Wrangle founder metadata into final format
+founder_metadata <- founderSamples %>%
+  dplyr::select(-bg) %>%
+  # Use different column names
+  dplyr::rename(original_sex = predicted.sex, 
+                correct_sex = inferred.sex,
+                sample = sample_id) %>%
+  # Use correct F1 designation
+  dplyr::mutate(strain = dplyr::if_else(dam != sire, 
+                                        true = paste0("(",dam,"x",sire,")F1"), 
+                                        false = dam)) %>%
+  # Name strains using official nomenclature
+  dplyr::mutate(dam = case_when(dam == "A/J" ~ "A",
+                                dam == "C57BL/6J" ~ "B",
+                                dam == "129S1/SvImJ" ~ "C",
+                                dam == "NOD/ShiLtJ" ~ "D",
+                                dam == "NZO/HILtJ" ~ "E",
+                                dam == "CAST/EiJ" ~ "F",
+                                dam == "PWK/PhJ" ~ "G",
+                                dam == "WSB/EiJ" ~ "H"),
+                sire = case_when(sire == "A/J" ~ "A",
+                                 sire == "C57BL/6J" ~ "B",
+                                 sire == "129S1/SvImJ" ~ "C",
+                                 sire == "NOD/ShiLtJ" ~ "D",
+                                 sire == "NZO/HILtJ" ~ "E",
+                                 sire == "CAST/EiJ" ~ "F",
+                                 sire == "PWK/PhJ" ~ "G",
+                                 sire == "WSB/EiJ" ~ "H")) %>%
+  # Make letter codes
+  tidyr::unite("letter", dam:sire, sep = "") %>%
+  dplyr::ungroup() %>%
+  dplyr::select(sample, strain, correct_sex, original_sex, letter) %>%
+  # Individual sample switch
+  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
+                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
+                                 false = strain),
+                letter = if_else(sample == "GC_15_F", 
+                                 true = "EC", 
+                                 false = letter))
+
+# Assemble metadata
+reference_meta_nostrain <- predicted.sexes %>%
+  # Use samples present in the final reference genotype file
+  dplyr::filter(sample_id %in% colnames(reference_genos_df)[-1]) %>%
+  # Join sex check and smaple information
+  dplyr::left_join(., reSexed_samples %>%
+                    dplyr::select(sample_id, inferred.sex)) %>%
+  dplyr::rename(sample = sample_id,
+                original_sex = predicted.sex,
+                correct_sex = inferred.sex) %>%
+  dplyr::left_join(., founder_metadata %>%
+                     dplyr::select(sample, strain)) %>%
+  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
+                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
+                                 false = strain))
+
+# Idenfity strain names without strain information
+unassigned_strains <- reference_meta_nostrain %>%
+  dplyr::filter(is.na(strain))
+
+# Use regex searching to identify missing strains
+new_strains <- purrr::map(unassigned_strains$sample, findStrain) %>%
+  unlist()
+unassigned_strains$strain <- new_strains
+reference_sample_metadata <- unassigned_strains %>%
+  dplyr::mutate(correct_sex = dplyr::if_else(is.na(correct_sex), 
+                                             true = "unknown", 
+                                             false = correct_sex),
+                mouse.id.1 = stringr::str_sub(strain, -1),
+                strain = dplyr::if_else(mouse.id.1 %in% c("m","f"), 
+                                        true = str_sub(string = strain, 1, nchar(strain)-1), 
+                                        false = strain)) %>%
+  dplyr::select(-mouse.id.1) %>%
+  dplyr::mutate(strain = dplyr::case_when(strain == "JAXMP_do" ~ "JAXMP_dom",
+                                        strain == "JAXMP_" ~ "JAXMP_minu",
+                                        strain == "PANCEVO/EiJ31581" ~ "PANCEVO/EiJ",
+                                        str_detect(string = strain, pattern = "MWN") ~ "MWN",
+                                        str_detect(string = strain, pattern = "PAE") ~ "PAE",
+                                        str_detect(string = strain, pattern = "JAXMP_pahari") ~ "JAXMP_pahari",
+                                        str_detect(string = strain, pattern = "JAXMP_spt") ~ "JAXMP_spt",
+                                        str_detect(string = strain, pattern = "JAXMP_cooki") ~ "JAXMP_cooki",
+                                        str_detect(string = strain, pattern = "JAXMP_cptak") ~ "JAXMP_cptak",
+                                        str_detect(string = strain, pattern = "JAXMP_caroli") ~ "JAXMP_caroli",
+                                        str_detect(string = strain, pattern = "JAXMP_hort") ~ "JAXMP_hort",
+                                        # A few remaining founder samples, not included in founder-specific
+                                        # analyses
+                                        str_detect(string = strain, pattern = "AA") ~ "A/J",
+                                        str_detect(string = strain, pattern = "BB") ~ "C57BL/6J",
+                                        TRUE ~ strain)) %>%
+  dplyr::bind_rows(.,reference_meta_nostrain %>%
+                     dplyr::filter(!sample %in% unassigned_strains$sample)) %>%
+  dplyr::filter(sample %in% colnames(reference_genos_df)[-1]) %>%
+  dplyr::mutate(correct_sex = dplyr::case_when(sample == "FAM" ~ "unknown",
+                                               sample == "JAXMP_cookii_TH_BC19281" ~ "female",
+                                               TRUE ~ correct_sex)) %>%
+  dplyr::ungroup() %>%
+  dplyr::distinct()
+
+```
+
+In addition, we identified 13 high-quality consensus genotypes on Chromosome Y and 20 genotypes on the mitochondria. We constructed dendrograms from both of these marker sets to estimate how many different Y haplogroups and mitotypes segregate among the CC/DO founders.
+
+```{r Y dendrogram, fig.width=10, fig.height=10}
+
+# Recode Chr Y consensus genotypes
+founder_consensus_genos_Y_recoded <- suppressWarnings(data.frame(apply(founder_consensus_genos_Y[,2:ncol(founder_consensus_genos_Y)], 2, recodeCalls)))
+founder_consensus_genos_Y_recoded %<>% 
+  dplyr::mutate(marker = founder_consensus_genos_Y$marker) %>%
+  dplyr::select(marker, everything())
+colnames(founder_consensus_genos_Y_recoded) <- colnames(founder_consensus_genos_Y)
+
+
+# Scale the Y genotype matrix, then calculate 
+# euclidean distance between all samples
+dd_Y <- dist(scale(t(founder_consensus_genos_Y_recoded[,-1])), method = "euclidean")
+hc_Y <- hclust(dd_Y, method = "ward.D2")
+plot(as.phylo(hc_Y), 
+     type = "u", 
+     cex = 1.5, 
+     tip.color = qtl2::CCcolors,
+     no.margin = T, label.offset = 0.75, edge.width = 1)
+```
+
+From the dendrogram above, there appear to be six rough Y chromosome haplogroups segregating among the founders, as was [previously reported](https://academic.oup.com/g3journal/article/6/12/3893/6059677).
+
+```{r}
+
+# View six Chr Y clusters
+six <- cutree(hc_Y, 6)
+print(paste("Cluster 1: ", paste(names(six[which(six == 1)]), collapse = ", ")))
+print(paste("Cluster 2: ", paste(names(six[which(six == 2)]), collapse = ", ")))
+print(paste("Cluster 3: ", paste(names(six[which(six == 3)]), collapse = ", ")))
+print(paste("Cluster 4: ", paste(names(six[which(six == 4)]), collapse = ", ")))
+print(paste("Cluster 5: ", paste(names(six[which(six == 5)]), collapse = ", ")))
+print(paste("Cluster 6: ", paste(names(six[which(six == 6)]), collapse = ", ")))
+
+# Make a data frame with just haplogroup 2
+BCE <- founder_consensus_genos_Y[,c(1,which(colnames(founder_consensus_genos_Y) %in% names(six[which(six == 2)])))]
+
+# If there is no variation within the haplogroup, condense the founders into one haplogroup
+if(unique(apply(BCE[,2:4],1,function(x) length(unique(x)))) == 1){
+  BCE <- BCE[,1:2]
+  colnames(BCE)[2] <- "BCE"
+}
+y_haplos <- BCE %>% dplyr::left_join(., founder_consensus_genos_Y)
+y_haplos %<>%
+  dplyr::select(marker, `A/J`, BCE, `NOD/ShiLtJ`, `CAST/EiJ`, `PWK/PhJ`, `WSB/EiJ`) %>%
+  `colnames<-`(c("marker", "A", "BCE", "D", "F", "G", "H"))
+```
+
+We performed the same analysis using the mitochondrial markers.
+
+```{r mt dendrogram, fig.width=10, fig.height=10}
+
+# Recode Mt consensus genotypes
+founder_consensus_genos_M_recoded <- suppressWarnings(data.frame(apply(founder_consensus_genos_M[,2:ncol(founder_consensus_genos_M)], 2, recodeCalls)))
+founder_consensus_genos_M_recoded %<>% 
+  dplyr::mutate(marker = founder_consensus_genos_M$marker) %>%
+  dplyr::select(marker, everything())
+colnames(founder_consensus_genos_M_recoded) <- colnames(founder_consensus_genos_M)
+
+# Scale the Mt genotype matrix, then calculate 
+# euclidean distance between all samples
+dd_M <- dist(scale(t(founder_consensus_genos_M_recoded[,-1])), method = "euclidean")
+hc_M <- hclust(dd_M, method = "ward.D2")
+plot(as.phylo(hc_M), 
+     type = "u", 
+     cex = 1.5, 
+     tip.color = qtl2::CCcolors,
+     no.margin = T, label.offset = 0, edge.width = 1)
+```
+
+From the above dendrogram, there are four clear haplogroups:
+
+```{r}
+
+# View four mitochondrial clusters
+four <- cutree(hc_M, 4)
+print(paste("Cluster 1: ", paste(names(four[which(four == 1)]), collapse = ", ")))
+print(paste("Cluster 2: ", paste(names(four[which(four == 2)]), collapse = ", ")))
+print(paste("Cluster 3: ", paste(names(four[which(four == 3)]), collapse = ", ")))
+print(paste("Cluster 4: ", paste(names(four[which(four == 4)]), collapse = ", ")))
+
+```
+
+These results, In contrast to [previously reports](https://academic.oup.com/g3journal/article/6/12/3893/6059677), demonstrate that PWK/PhJ and CAST/EiJ cluster together using these markers. However, when enforcing a five-cluster split, the PWK/PhJ and CAST/EiJ haplogroups split before any other cluster.
+
+```{r}
+
+# View five mitochondrial clusters
+five <- cutree(hc_M, 5)
+print(paste("Cluster 1: ", paste(names(five[which(five == 1)]), collapse = ", ")))
+print(paste("Cluster 2: ", paste(names(five[which(five == 2)]), collapse = ", ")))
+print(paste("Cluster 3: ", paste(names(five[which(five == 3)]), collapse = ", ")))
+print(paste("Cluster 4: ", paste(names(five[which(five == 4)]), collapse = ", ")))
+print(paste("Cluster 5: ", paste(names(five[which(five == 4)]), collapse = ", ")))
+```
+
+Additionally, five markers distinguish the two haplogroups.
+
+```{r}
+
+# How many markers distinguish CAST and PWK mitochondrial haplogroups?
+founder_consensus_genos_M %>%
+  dplyr::select(marker, `CAST/EiJ`,`PWK/PhJ`) %>%
+  dplyr::filter(`CAST/EiJ` != `PWK/PhJ`)
+
+# Make a data frame with just haplogroup 2
+ABCD <- founder_consensus_genos_M[,c(1,which(colnames(founder_consensus_genos_M) %in% names(five[which(five == 1)])))]
+
+# If there is no variation within the haplogroup, condense the founders into one haplogroup
+if(unique(apply(ABCD[,2:5],1,function(x) length(unique(x)))) == 1){
+  ABCD <- ABCD[,1:2]
+  colnames(ABCD)[2] <- "ABCD"
+}
+m_haplos <- ABCD %>% dplyr::left_join(., founder_consensus_genos_M)
+m_haplos %<>%
+  dplyr::select(marker, ABCD, `NZO/HILtJ`, `CAST/EiJ`, `PWK/PhJ`, `WSB/EiJ`) %>%
+  `colnames<-`(c("marker", "ABCD", "E", "F", "G", "H"))
+```
+
+Given that the five haplogroups separate the wild-derived founders from each subspecies, we recommend that this haplogroup structure be adopted for future haplotype reconstruction for the mitochondria in the DO for QTL mapping applications.
 
 ## Writing reference files
 
@@ -502,290 +1038,80 @@ Each file type is generated for:
 
 -   Eight CC/DO founder strains
 
-```{r output files for all samples}
-
-bad_samples <- high.n.samples %>%
-  dplyr::filter(!sample_id %in% c("JAXMP_caroli_UNK_BC21325",
-                                  "JAXMP_minu_KE_BC24327",
-                                  "JAXMP_minu_KE_BC24339",
-                                  "JAXMP_pahari_TH_BC21314"))
-
-#############################################
-## Write Reference Genotypes - All Samples ##
-#############################################
-
-founder_sample_geno_files <- c(as.list(list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
-                                                  pattern = "gm_founder_genos_chr_")[1:19]),"M","NA",
-                               list.files(path = "data/GigaMUGA/GigaMUGA_founder_sample_genotypes/", 
-                                          pattern ="gm_founder_genos_chr_")[20],"Y")
-
-nonfounder_sample_geno_files <- as.list(list.files(path = "data/GigaMUGA/GigaMUGA_reference_genotypes/", pattern = "gm_genos_chr_"))
-future::plan(multisession, workers = 16)
-make_chunks <- furrr:::make_chunks
-make_chunks(n_x = length(founder_sample_geno_files), n_workers = 16)
-
-reference_genos_list <- furrr::future_map2(.x = founder_sample_geno_files, 
-                                           .y = nonfounder_sample_geno_files,
-                                           .f = writeReferenceGenotypes, 
-                                      .options = furrr_options(seed = TRUE)) %>%
-  purrr::discard(., is.character)
-
-# All reference genotypes
-reference_genos_df <- Reduce(dplyr::bind_rows, reference_genos_list)
-reference_genos_df %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-###############################################
-## Write Reference Intensities - All Samples ##
-###############################################
-reference_intensities_list <- furrr::future_map(.x = nonfounder_sample_geno_files, 
-                                                .f = writeReferenceIntensities, 
-                                                .options = furrr_options(seed = TRUE))
-reference_X_intensities_df <- purrr::transpose(reference_intensities_list)[[1]] %>%
-  purrr::keep(., is.data.frame) %>%
-  Reduce(dplyr::bind_rows, .)
-reference_Y_intensities_df <- purrr::transpose(reference_intensities_list)[[2]] %>%
-  purrr::keep(., is.data.frame) %>%
-  Reduce(dplyr::bind_rows, .)
-
-reference_X_intensities_df %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-reference_Y_intensities_df %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-#################################################
-## Write Consensus Genotypes - Founder Strains ##
-#################################################
-founder_consensus_files <- list.files(path = "data/GigaMUGA/GigaMUGA_founder_consensus_genotypes/", 
-                                      pattern = "GigaMUGA_founder_consensus_imputed_genotypes_chr")
-founder_consensus_genos <- purrr::map(.x = founder_consensus_files, 
-                                      .f = writeFounderConsensusGenotypes) %>%
-  Reduce(dplyr::bind_rows, .)
-
-for(i in 2:ncol(founder_consensus_genos)){
-  founder_consensus_genos[,i] <- unlist(purrr::transpose(strsplit(founder_consensus_genos[,i],""))[[1]])
-}
-
-founder_consensus_genos_Y <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrY.csv") %>%
-  dplyr::select(-X) %>%
-  `colnames<-`(colnames(founder_consensus_genos))
-founder_consensus_genos_M <- read.csv(file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_chrM.csv") %>%
-  dplyr::select(-X) %>%
-  `colnames<-`(colnames(founder_consensus_genos))
-
-founder_consensus_genos %<>%
-  dplyr::bind_rows(., founder_consensus_genos_Y) %>%
-  dplyr::bind_rows(., founder_consensus_genos_M)
-
-founder_consensus_genos %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-
-####################################
-## Write Founder Mean Intensities ##
-####################################
-
-founder_samples_strains <- founderSamples %>%
-  dplyr::filter(bg == "INBRED") %>%
-  dplyr::distinct(sample_id, dam) %>%
-  dplyr::rename(strain = dam) # if inbred, dam == strain
-
-founder_mean_x_ints <- reference_X_intensities_df %>%
-  dplyr::select(marker,founder_samples_strains$sample_id) %>%
-  tidyr::pivot_longer(-marker, names_to = "sample_id", values_to = "X") %>%
-  dplyr::left_join(., founder_samples_strains) %>% 
-  dplyr::filter(!is.na(X)) %>%
-  dplyr::group_by(marker, strain) %>%
-  dplyr::summarise(mean_x = mean(X)) %>%
-  tidyr::pivot_wider(names_from = strain, values_from = mean_x) %>%
-  dplyr::filter(marker %in% founder_consensus_genos$marker)
-
-founder_mean_x_ints %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-founder_mean_y_ints <- reference_Y_intensities_df %>%
-  dplyr::select(marker,founder_samples_strains$sample_id) %>%
-  tidyr::pivot_longer(-marker, names_to = "sample_id", values_to = "Y") %>%
-  dplyr::left_join(., founder_samples_strains) %>% 
-  dplyr::filter(!is.na(Y)) %>%
-  dplyr::group_by(marker, strain) %>%
-  dplyr::summarise(mean_y = mean(Y)) %>%
-  tidyr::pivot_wider(names_from = strain, values_from = mean_y) %>%
-  dplyr::filter(marker %in% founder_consensus_genos$marker)
-
-founder_mean_y_ints %<>%
-  dplyr::left_join(., gm_metadata %>%
-                     dplyr::select(marker, chr, bp_mm10, cM_cox)) %>%
-  dplyr::arrange(bp_mm10, cM_cox) %>%
-  select(-chr, -cM_cox, -bp_mm10)
-
-###################################
-## Write Founder Sample Metadata ##
-###################################
-
-founder_metadata <- founderSamples %>%
-  dplyr::select(-bg) %>%
-  dplyr::rename(original_sex = predicted.sex, 
-                correct_sex = inferred.sex,
-                sample = sample_id) %>%
-  dplyr::mutate(strain = dplyr::if_else(dam != sire, true = paste0("(",dam,"x",sire,")F1"), false = dam)) %>%
-  dplyr::mutate(dam = case_when(dam == "A/J" ~ "A",
-                                dam == "C57BL/6J" ~ "B",
-                                dam == "129S1/SvImJ" ~ "C",
-                                dam == "NOD/ShiLtJ" ~ "D",
-                                dam == "NZO/HILtJ" ~ "E",
-                                dam == "CAST/EiJ" ~ "F",
-                                dam == "PWK/PhJ" ~ "G",
-                                dam == "WSB/EiJ" ~ "H"),
-                sire = case_when(sire == "A/J" ~ "A",
-                                 sire == "C57BL/6J" ~ "B",
-                                 sire == "129S1/SvImJ" ~ "C",
-                                 sire == "NOD/ShiLtJ" ~ "D",
-                                 sire == "NZO/HILtJ" ~ "E",
-                                 sire == "CAST/EiJ" ~ "F",
-                                 sire == "PWK/PhJ" ~ "G",
-                                 sire == "WSB/EiJ" ~ "H")) %>%
-  tidyr::unite("letter", dam:sire, sep = "") %>%
-  dplyr::ungroup() %>%
-  dplyr::select(sample, strain, correct_sex, original_sex, letter) %>%
-  # Individual sample switch
-  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
-                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
-                                 false = strain),
-                letter = if_else(sample == "GC_15_F", 
-                                 true = "EC", 
-                                 false = letter))
-
-reference_meta_nostrain <- predicted.sexes %>%
-  dplyr::filter(sample_id %in% colnames(reference_genos_df)[-1]) %>%
-  dplyr::left_join(., reSexed_samples %>%
-                    dplyr::select(sample_id, inferred.sex)) %>%
-  dplyr::rename(sample = sample_id,
-                original_sex = predicted.sex,
-                correct_sex = inferred.sex) %>%
-  dplyr::left_join(., founder_metadata %>%
-                     dplyr::select(sample, strain)) %>%
-  dplyr::mutate(strain = if_else(sample == "GC_15_F", 
-                                 true = "(NZO/HILtJx129S1/SvImJ)F1", 
-                                 false = strain))
-
-unassigned_strains <- reference_meta_nostrain %>%
-  dplyr::filter(is.na(strain))
-new_strains <- purrr::map(unassigned_strains$sample, findStrain) %>%
-  unlist()
-unassigned_strains$strain <- new_strains
-
-reference_sample_metadata <- unassigned_strains %>%
-  dplyr::mutate(correct_sex = dplyr::if_else(is.na(correct_sex), true = "unknown", false = correct_sex),
-                mouse.id.1 = stringr::str_sub(strain, -1),
-                strain = dplyr::if_else(mouse.id.1 %in% c("m","f"), 
-                                        true = str_sub(string = strain, 1, nchar(strain)-1), 
-                                        false = strain)) %>%
-  dplyr::select(-mouse.id.1) %>%
-  dplyr::mutate(strain = dplyr::case_when(strain == "JAXMP_do" ~ "JAXMP_dom",
-                                        strain == "JAXMP_" ~ "JAXMP_minu",
-                                        strain == "PANCEVO/EiJ31581" ~ "PANCEVO/EiJ",
-                                        str_detect(string = strain, pattern = "MWN") ~ "MWN",
-                                        str_detect(string = strain, pattern = "PAE") ~ "PAE",
-                                        str_detect(string = strain, pattern = "JAXMP_pahari") ~ "JAXMP_pahari",
-                                        str_detect(string = strain, pattern = "JAXMP_spt") ~ "JAXMP_spt",
-                                        str_detect(string = strain, pattern = "JAXMP_cooki") ~ "JAXMP_cooki",
-                                        str_detect(string = strain, pattern = "JAXMP_cptak") ~ "JAXMP_cptak",
-                                        str_detect(string = strain, pattern = "JAXMP_caroli") ~ "JAXMP_caroli",
-                                        str_detect(string = strain, pattern = "JAXMP_hort") ~ "JAXMP_hort",
-                                        TRUE ~ strain)) %>%
-  dplyr::bind_rows(.,reference_meta_nostrain %>%
-                     dplyr::filter(!sample %in% unassigned_strains$sample)) %>%
-  dplyr::filter(sample %in% colnames(reference_genos_df)[-1]) %>%
-  dplyr::mutate(correct_sex = dplyr::case_when(sample == "FAM" ~ "unknown",
-                                               sample == "JAXMP_cookii_TH_BC19281" ~ "female",
-                                               TRUE ~ correct_sex)) %>%
-  dplyr::distinct()
-
-
+```{r writing reference files}
 ###################
 ## WRITING FILES ##
 ###################
 
-
-  dir.create("output/GigaMUGA")
-  write.csv(reference_genos_df, 
-            file = "output/GigaMUGA/GigaMUGA_genotypes.csv", 
-            row.names = F)
-  if(file.exists("output/GigaMUGA/GigaMUGA_genotypes.csv.gz")){
+# Write reference genotypes
+dir.create("output/GigaMUGA")
+write.csv(reference_genos_df, 
+          file = "output/GigaMUGA/GigaMUGA_genotypes.csv", 
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_genotypes.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_genotypes.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_genotypes.csv")
+system("gzip output/GigaMUGA/GigaMUGA_genotypes.csv")
 
-  
-  write.csv(reference_X_intensities_df, 
-            file = "output/GigaMUGA/GigaMUGA_x_intensities.csv",
-            row.names = F)
-  if(file.exists("output/GigaMUGA/GigaMUGA_x_intensities.csv.gz")){
+# Write reference x-channel intensities
+write.csv(reference_X_intensities_df, 
+          file = "output/GigaMUGA/GigaMUGA_x_intensities.csv",
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_x_intensities.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_x_intensities.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_x_intensities.csv")  
+system("gzip output/GigaMUGA/GigaMUGA_x_intensities.csv")  
 
-
-  write.csv(reference_Y_intensities_df, 
-            file = "output/GigaMUGA/GigaMUGA_y_intensities.csv",
-            row.names = F)
-  if(file.exists("output/GigaMUGA/GigaMUGA_y_intensities.csv.gz")){
+# Write reference y-channel intensities
+write.csv(reference_Y_intensities_df, 
+          file = "output/GigaMUGA/GigaMUGA_y_intensities.csv",
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_y_intensities.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_y_intensities.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_y_intensities.csv")
+system("gzip output/GigaMUGA/GigaMUGA_y_intensities.csv")
 
+# Write sample metadata for all reference samples
+write.csv(reference_sample_metadata, 
+          file = "output/GigaMUGA/GigaMUGA_sample_metadata.csv",
+          row.names = F)
 
-  write.csv(reference_sample_metadata, 
-            file = "output/GigaMUGA/GigaMUGA_sample_metadata.csv",
-            row.names = F)
-
-  
-  write.csv(founder_consensus_genos, 
-            file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv",
-            row.names = F)
-  if(file.exists("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")){
+# Write founder consensus genotypes
+write.csv(founder_consensus_genos, 
+          file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv",
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv")
-  
+system("gzip output/GigaMUGA/GigaMUGA_founder_consensus_genotypes.csv")
+write.csv(m_haplos,
+          file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_Mt.csv",
+          row.names = F)
+write.csv(y_haplos,
+          file = "output/GigaMUGA/GigaMUGA_founder_consensus_genotypes_Y.csv",
+          row.names = F)
 
-  write.csv(founder_mean_x_ints, 
-            file = "output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv",
-            row.names = F)
-  if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz")){
+# Write founder strain-averaged x-channel intensities
+write.csv(founder_mean_x_ints, 
+          file = "output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv",
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv")
+system("gzip output/GigaMUGA/GigaMUGA_founder_mean_x_intensities.csv")
 
-
-  write.csv(founder_mean_y_ints, 
-            file = "output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv",
-            row.names = F)
-    if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz")){
+# Write founder strain-averaged y-channel intensities
+write.csv(founder_mean_y_ints, 
+          file = "output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv",
+          row.names = F)
+if(file.exists("output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz")){
     system("rm output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv.gz")
   }
-  system("gzip output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv")
+system("gzip output/GigaMUGA/GigaMUGA_founder_mean_y_intensities.csv")
 
-
-  write.csv(founder_metadata, 
-            file = "output/GigaMUGA/GigaMUGA_founder_metadata.csv",
-            row.names = F)
+# Write founder sample metadata
+write.csv(founder_metadata, 
+          file = "output/GigaMUGA/GigaMUGA_founder_metadata.csv",
+          row.names = F)
 
 ```

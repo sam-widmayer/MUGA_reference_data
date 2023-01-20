@@ -881,7 +881,7 @@ final_founder_samples <- founder_samples %>%
   dplyr::mutate(sire = if_else(sire == "NOT CC/DO Founder", dam, sire),
                 bg = if_else(dam == sire, "INBRED", "CROSS"))
 
-strict_founder_strains <- c("129S1/SvImJ","A/J","C57BL/6J","CAST/EiJ","NOD/ShiLtJ","NZO/HlLtJ","PWK/PhJ","WSB/EiJ")
+strict_founder_strains <- c("129S1/SvImJ","A/J","C57BL/6J","CAST/EiJ","NOD/ShiLtJ","NZO/HILtJ","PWK/PhJ","WSB/EiJ")
 levels(final_founder_samples$dam) <- strict_founder_strains
 levels(final_founder_samples$sire)<- strict_founder_strains
 
@@ -1179,7 +1179,7 @@ The genotypes for intersecting markers between two strains were combined ("cross
 
 # Build a list of founder consensus genotypes for good markers
 founder_consensus_calls <- list(`Calls_A/J`, `Calls_C57BL/6J`, `Calls_129S1/SvImJ`, `Calls_NOD/ShiLtJ`,
-                                `Calls_NZO/HlLtJ`, `Calls_CAST/EiJ`, `Calls_PWK/PhJ`, `Calls_WSB/EiJ`)
+                                `Calls_NZO/HILtJ`, `Calls_CAST/EiJ`, `Calls_PWK/PhJ`, `Calls_WSB/EiJ`)
 
 # Generate a data frame with good markers as the sole column
 good_markers <- genos.flagged %>%
@@ -1219,6 +1219,7 @@ founder_intensities <- founder_sample_metadata %>%
 
 
 ```
+
 
 ```{r fig.width=10, fig.height=5}
 
@@ -1411,7 +1412,7 @@ founder_sample_metadata_conc <- founder_concordance_df_3 %>%
                                 sire == "NZO/HILtJ" ~ "E",
                                 sire == "CAST/EiJ" ~ "F",
                                 sire == "PWK/PhJ" ~ "G",
-                                sire == "WSB/EiJ" ~ "H")) %>%
+                                sire == "WSB/EiJ" ~ "H")) %>% 
   tidyr::unite("letter", dam:sire, sep = "")
 
 # Founder Sample Intensities
@@ -1441,37 +1442,42 @@ founder_yints <- founder_mean_ints %>%
 dir.create("output", showWarnings = F)
 dir.create("output/MUGA", showWarnings = F)
 
-if(file.exists("output/MUGA/MUGA_genotypes.csv.gz") == "FALSE"){
-  write.csv(reference_genos_all_samples, file = "output/MUGA/MUGA_genotypes.csv")
-  system("gzip output/MUGA/MUGA_genotypes.csv")
-}
-if(file.exists("output/MUGA/MUGA_x_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_xints_all_samples, file = "output/MUGA/MUGA_x_intensities.csv")
-  system("gzip output/MUGA/MUGA_x_intensities.csv")
-}
-if(file.exists("output/MUGA/MUGA_y_intensities.csv.gz") == "FALSE"){
-  write.csv(reference_yints_all_samples, file = "output/MUGA/MUGA_y_intensities.csv")
-  system("gzip output/MUGA/MUGA_y_intensities.csv")
-  
-}
-if(file.exists("output/MUGA/MUGA_sample_metadata.csv") == "FALSE"){
-  write.csv(strain_assignment, file = "output/MUGA/MUGA_sample_metadata.csv")
-}
+write.csv(reference_genos_all_samples, 
+  file = "output/MUGA/MUGA_genotypes.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_genotypes.csv")
 
-if(file.exists("output/MUGA/MUGA_founder_consensus_genotypes.csv.gz") == "FALSE"){
-  write.csv(final_founder_consensus_genotypes, file = "output/MUGA/MUGA_founder_consensus_genotypes.csv")
-  system("gzip output/MUGA/MUGA_founder_consensus_genotypes.csv")
-}
-if(file.exists("output/MUGA/MUGA_founder_mean_x_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_xints, file = "output/MUGA/MUGA_founder_mean_x_intensities.csv")
-  system("gzip output/MUGA/MUGA_founder_mean_x_intensities.csv")
-}
-if(file.exists("output/MUGA/MUGA_founder_mean_y_intensities.csv.gz") == "FALSE"){
-  write.csv(founder_yints, file = "output/MUGA/MUGA_founder_mean_y_intensities.csv")
-  system("gzip output/MUGA/MUGA_founder_mean_y_intensities.csv")
-}
-if(file.exists("output/MUGA/MUGA_founder_metadata.csv") == "FALSE"){
-  write.csv(founder_sample_metadata_conc, file = "output/MUGA/MUGA_founder_metadata.csv")
-}
+write.csv(reference_xints_all_samples, 
+  file = "output/MUGA/MUGA_x_intensities.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_x_intensities.csv")
+
+write.csv(reference_yints_all_samples, 
+  file = "output/MUGA/MUGA_y_intensities.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_y_intensities.csv")
+
+write.csv(strain_assignment, 
+  file = "output/MUGA/MUGA_sample_metadata.csv", 
+  row.names = F)
+
+write.csv(final_founder_consensus_genotypes, 
+  file = "output/MUGA/MUGA_founder_consensus_genotypes.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_founder_consensus_genotypes.csv")
+
+write.csv(founder_xints, 
+  file = "output/MUGA/MUGA_founder_mean_x_intensities.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_founder_mean_x_intensities.csv")
+
+write.csv(founder_yints, 
+  file = "output/MUGA/MUGA_founder_mean_y_intensities.csv", 
+  row.names = F)
+system("gzip output/MUGA/MUGA_founder_mean_y_intensities.csv")
+
+write.csv(founder_sample_metadata_conc, 
+            file = "output/MUGA/MUGA_founder_metadata.csv", 
+            row.names = F)
 
 ```
