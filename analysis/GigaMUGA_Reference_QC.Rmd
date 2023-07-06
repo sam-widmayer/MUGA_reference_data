@@ -298,7 +298,7 @@ load("data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")
 load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
 
 # Load in GigaMUGA marker annotations
-gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv")
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v4.csv")
 ```
 
 ## Marker QC: Searching for missing genotype calls
