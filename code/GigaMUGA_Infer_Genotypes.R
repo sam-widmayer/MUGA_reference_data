@@ -13,7 +13,7 @@
 # Sam Widmayer
 # samuel.widmayer@jax.org
 
-# 2022-12.20
+# 20240214
 ################################################################################
 
 options(stringsAsFactors = FALSE)
@@ -30,9 +30,9 @@ library(qtl2fst)
 
 ##### VARIABLES #####
 
-chr <- as.numeric(args[1])
+chr <- args[1]
 
-if(chr == 20){
+if(chr == "X"){
   print("Specifying Input Files for Chromosome X")
 } else {
   print(paste0("Specifying Input Files for Chromosome ",chr))
@@ -52,7 +52,7 @@ out_dir  = '/projects/compsci/vmp/USERS/widmas/MUGA_reference_data/data/GigaMUGA
 marker_file = file.path(data_dir, 'gm_uwisc_v2.csv')
 
 # All founders & F1s in tall format.
-if(chr == 20){
+if(chr == "X"){
   founder_all_file  = file.path(data_dir, 'GigaMUGA_reference_genotypes', 'gm_genos_chr_X.fst')
 } else {
   founder_all_file  = file.path(data_dir, 'GigaMUGA_reference_genotypes', paste0('gm_genos_chr_',chr,'.fst'))
@@ -99,7 +99,7 @@ ff1 = ff1 %>%
 ff1 = ff1[ff1$marker %in% names(map[[chr]]),]
 
 # We should have only markers from supplied chromosome
-if(chr == 20){
+if(chr == "X"){
   stopifnot(all(ff1$chr == "X"))
 } else {
   stopifnot(all(ff1$chr == chr))
@@ -305,7 +305,7 @@ for(m in wh) {
 } # for(m)
 
 # Write chromosome-level founder consensus genotype file
-if(chr == 20){
+if(chr == "X"){
   print("Writing Chromosome X Consensus Genotypes")
   write.csv(founder_consensus, 
             file = file.path(out_dir,"GigaMUGA_founder_consensus_genotypes","GigaMUGA_founder_consensus_imputed_genotypes_chrX.csv"), 

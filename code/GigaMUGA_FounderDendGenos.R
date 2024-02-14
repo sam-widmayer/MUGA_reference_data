@@ -33,7 +33,7 @@ writeWideChrGenos <- function(x,y){
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
 load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
 
-gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v4.csv",
                             progress = T)
 print(paste("Writing wide genotype file for chromosome",args[1]))
 

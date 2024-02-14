@@ -899,7 +899,7 @@ reference_sample_metadata <- unassigned_strains %>%
 
 ```
 
-In addition, we identified 13 high-quality consensus genotypes on Chromosome Y and 20 genotypes on the mitochondria. We constructed dendrograms from both of these marker sets to estimate how many different Y haplogroups and mitotypes segregate among the CC/DO founders.
+In addition, we identified 25 high-quality consensus genotypes on Chromosome Y and 20 genotypes on the mitochondria. We constructed dendrograms from both of these marker sets to estimate how many different Y haplogroups and mitotypes segregate among the CC/DO founders.
 
 ```{r Y dendrogram, fig.width=10, fig.height=10}
 
@@ -922,28 +922,30 @@ plot(as.phylo(hc_Y),
      no.margin = T, label.offset = 0.75, edge.width = 1)
 ```
 
-From the dendrogram above, there appear to be six rough Y chromosome haplogroups segregating among the founders, as was [previously reported](https://academic.oup.com/g3journal/article/6/12/3893/6059677).
 
 ```{r}
 
 # View six Chr Y clusters
-six <- cutree(hc_Y, 6)
-print(paste("Cluster 1: ", paste(names(six[which(six == 1)]), collapse = ", ")))
-print(paste("Cluster 2: ", paste(names(six[which(six == 2)]), collapse = ", ")))
-print(paste("Cluster 3: ", paste(names(six[which(six == 3)]), collapse = ", ")))
-print(paste("Cluster 4: ", paste(names(six[which(six == 4)]), collapse = ", ")))
-print(paste("Cluster 5: ", paste(names(six[which(six == 5)]), collapse = ", ")))
-print(paste("Cluster 6: ", paste(names(six[which(six == 6)]), collapse = ", ")))
+# six <- cutree(hc_Y, 6)
+three <- cutree(hc_Y, 3)
+print(paste("Cluster 1: ", paste(names(three[which(three == 1)]), collapse = ", ")))
+print(paste("Cluster 2: ", paste(names(three[which(three == 2)]), collapse = ", ")))
+print(paste("Cluster 3: ", paste(names(three[which(three == 3)]), collapse = ", ")))
+# print(paste("Cluster 4: ", paste(names(six[which(six == 4)]), collapse = ", ")))
+# print(paste("Cluster 5: ", paste(names(six[which(six == 5)]), collapse = ", ")))
+# print(paste("Cluster 6: ", paste(names(six[which(six == 6)]), collapse = ", ")))
 
-# Make a data frame with just haplogroup 2
-BCE <- founder_consensus_genos_Y[,c(1,which(colnames(founder_consensus_genos_Y) %in% names(six[which(six == 2)])))]
+# Make a data frame with just haplogroup 1
+BCE <- founder_consensus_genos_Y[,c(1,which(colnames(founder_consensus_genos_Y) %in% names(three[which(three == 1)])[2:4]))]
 
 # If there is no variation within the haplogroup, condense the founders into one haplogroup
 if(unique(apply(BCE[,2:4],1,function(x) length(unique(x)))) == 1){
   BCE <- BCE[,1:2]
   colnames(BCE)[2] <- "BCE"
 }
+
 y_haplos <- BCE %>% dplyr::left_join(., founder_consensus_genos_Y)
+y_haplos[is.na(y_haplos)] <- "N"
 y_haplos %<>%
   dplyr::select(marker, `A/J`, BCE, `NOD/ShiLtJ`, `CAST/EiJ`, `PWK/PhJ`, `WSB/EiJ`) %>%
   `colnames<-`(c("marker", "A", "BCE", "D", "F", "G", "H"))
@@ -984,7 +986,7 @@ print(paste("Cluster 4: ", paste(names(four[which(four == 4)]), collapse = ", ")
 
 ```
 
-These results, In contrast to [previously reports](https://academic.oup.com/g3journal/article/6/12/3893/6059677), demonstrate that PWK/PhJ and CAST/EiJ cluster together using these markers. However, when enforcing a five-cluster split, the PWK/PhJ and CAST/EiJ haplogroups split before any other cluster.
+These results, in contrast to [previously reports](https://academic.oup.com/g3journal/article/6/12/3893/6059677), demonstrate that PWK/PhJ and CAST/EiJ cluster together using these markers. However, when enforcing a five-cluster split, the PWK/PhJ and CAST/EiJ haplogroups split before any other cluster.
 
 ```{r}
 
@@ -994,7 +996,7 @@ print(paste("Cluster 1: ", paste(names(five[which(five == 1)]), collapse = ", ")
 print(paste("Cluster 2: ", paste(names(five[which(five == 2)]), collapse = ", ")))
 print(paste("Cluster 3: ", paste(names(five[which(five == 3)]), collapse = ", ")))
 print(paste("Cluster 4: ", paste(names(five[which(five == 4)]), collapse = ", ")))
-print(paste("Cluster 5: ", paste(names(five[which(five == 4)]), collapse = ", ")))
+print(paste("Cluster 5: ", paste(names(five[which(five == 5)]), collapse = ", ")))
 ```
 
 Additionally, five markers distinguish the two haplogroups.

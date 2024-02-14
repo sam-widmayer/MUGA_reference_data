@@ -177,7 +177,7 @@ founder_background_QC <- function(dam, sire, GC_15 = F){
 load("data/GigaMUGA/GigaMUGA_QC_Results.RData")
 load("data/GigaMUGA/GigaMUGA_BadSamples_BadMarkers.RData")
 load("data/GigaMUGA/GigaMUGA_SexCheck_Results.RData")
-gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v4.csv",
                             progress = T)
 
 # Sample Genotype Filepath

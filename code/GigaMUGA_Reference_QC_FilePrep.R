@@ -38,7 +38,7 @@ if(!file.exists("data/GigaMUGA/GigaMUGA_control_genotypes.fst")){
   fst::write.fst(control_genotypes, "data/GigaMUGA/GigaMUGA_control_genotypes.fst")
   }
 
-gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv",
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v4.csv",
                             progress = T)
 print(paste("Writing genotype files for chromosome",args[1]))
 control_genotypes_selected_chr <- read.fst("data/GigaMUGA/GigaMUGA_control_genotypes.fst") %>%

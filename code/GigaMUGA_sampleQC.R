@@ -11,7 +11,7 @@ require(magrittr)
 require(vroom)
 
 # Reading in source data
-gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v2.csv", num_threads = detectCores())
+gm_metadata <- vroom::vroom("data/GigaMUGA/gm_uwisc_v4.csv", num_threads = detectCores())
 control_genotype_files <- list.files("data/GigaMUGA/GigaMUGA_reference_genotypes/", pattern = "gm_genos_chr")
 
 # Creating parallelization plan for furrr
@@ -19,9 +19,12 @@ plan(multisession, workers = 23)
 make_chunks <- furrr:::make_chunks
 suppressMessages(make_chunks(n_x = 23, chunk_size = 1))
 
-# Calculating frequency of each genotype for each marker
+# Calculate number of missing genotypes (doing Y chromosome separately):
+# 1) among each marker across all samples and
+# 2) among each individual sample across all markers
 control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
                     chr_geno <- read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",x))
+                    
                     control_allele_freqs <- chr_geno %>%
                       dplyr::group_by(marker, genotype) %>%
                       dplyr::count() %>% 
@@ -32,8 +35,20 @@ control_allele_freqs <- furrr::future_map(control_genotype_files,function(x){
                                                        false = as.character(genotype)),
                                     freq = round(n/sum(n), 3),
                                     genotype = as.factor(genotype))
-                    return(control_allele_freqs)})
-control_allele_freqs_df <- Reduce(dplyr::bind_rows, control_allele_freqs)
+                    
+                    sample_Ns <- chr_geno %>%
+                      dplyr::group_by(sample_id, genotype) %>%
+                      dplyr::count() %>% 
+                      dplyr::ungroup() %>%
+                      dplyr::group_by(sample_id) %>%
+                      dplyr::mutate(genotype = if_else(condition = genotype == "-", 
+                                                       true = "N", 
+                                                       false = as.character(genotype))) %>%
+                      dplyr::filter(genotype == "N")
+                    
+                    return(list(control_allele_freqs,sample_Ns))})
+tr_missing_genos <- purrr::transpose(control_allele_freqs)
+control_allele_freqs_df <- Reduce(dplyr::bind_rows, tr_missing_genos[[1]])
 
 ## Filtering to markers with missing genotypes
 no.calls <- control_allele_freqs_df %>%
@@ -47,26 +62,25 @@ no.calls <- control_allele_freqs_df %>%
 
 ## Identifying markers with missing genotypes at a frequency higher than the 95th percentile of "N" frequencies across all markers
 cutoff <- quantile(no.calls$freq, probs = seq(0,1,0.05))[[19]]
-above.cutoff <- no.calls %>%
-  dplyr::filter(freq > cutoff)
 
+## Filter to markers with no call rates higher than the cutoff except for Y chromosome - keep those for awhile
+no_calls_nested <- no.calls %>%
+  dplyr::group_by(chr) %>%
+  tidyr::nest()
+
+above_cutoff_nested <- purrr::map2(.x = no_calls_nested$data, 
+            .y = no_calls_nested$chr, 
+            .f = function(d, chr){
+              if(!chr == "Y"){
+                new_dat <- d[d$freq > cutoff,] %>%
+                  dplyr::mutate(chr = chr)
+                return(new_dat)}
+              }
+            )
+above.cutoff <- Reduce(dplyr::bind_rows, above_cutoff_nested)
 
 ## Calculating the number of missing markers for each sample
-n.calls.strains <- furrr::future_map(control_genotype_files,
-                                     function(x){
-                                       chr_geno <- read.fst(paste0("data/GigaMUGA/GigaMUGA_reference_genotypes/",x))
-                                       sample_Ns <- chr_geno %>%
-                                         dplyr::group_by(sample_id, genotype) %>%
-                                         dplyr::count() %>% 
-                                         dplyr::ungroup() %>%
-                                         dplyr::group_by(sample_id) %>%
-                                         dplyr::mutate(genotype = if_else(condition = genotype == "-", 
-                                                                         true = "N", 
-                                                                         false = as.character(genotype))) %>%
-                                         dplyr::filter(genotype == "N")
-                                       return(sample_Ns)}) %>% 
-  Reduce(dplyr::bind_rows, .)
-  
+n.calls.strains <- Reduce(dplyr::bind_rows, tr_missing_genos[[2]])
 n.calls.strains.df <- n.calls.strains %>%
   dplyr::group_by(sample_id) %>%
   dplyr::summarise(n.no.calls = sum(n)) %>%
@@ -208,7 +222,9 @@ flagged_XY_intensities <- long_XY_intensities %>%
                                              false = "")) %>%
   dplyr::mutate(high_missing_sample = dplyr::if_else(condition = sample_id %in% high.n.samples$sample_id,
                                                      true = "FLAG",
-                                                     false = ""))
+                                                     false = "")) %>%
+  dplyr::left_join(., predicted.sexes)
+
 
 # Input: Sex chromosome probe intensities for each marker with 1) marker metdata, 2) marker and sample flags, 3) background and sex predictions
 Xchr.int <- flagged_XY_intensities %>%
@@ -329,6 +345,7 @@ founderSamples <- reSexed_samples %>%
                                         sire == "H" ~ founder_strains[8]),
                 bg = dplyr::if_else(dam == sire, true = "INBRED", false = "CROSS")) %>%
   dplyr::select(sample_id, inferred.sex, dam, sire, bg, predicted.sex)
+
 
 
 save(control_allele_freqs_df,
